@@ -1,0 +1,600 @@
+#!/usr/bin/env bash
+
+# ==========================================
+# 1. 国际化与 UI 美化设置 (i18n & UI)
+# ==========================================
+C_DEF='\033[0m'
+C_BLU='\033[1;34m'
+C_GRN='\033[1;32m'
+C_YEL='\033[1;33m'
+C_RED='\033[1;31m'
+C_CYA='\033[1;36m'
+
+IS_ZH=0
+if [[ "${LANG}" == *"zh_CN"* || "${LC_ALL}" == *"zh_CN"* ]]; then
+    IS_ZH=1
+fi
+
+_t() {
+    if [[ $IS_ZH -eq 1 && -n "$2" ]]; then echo "$2"; else echo "$1"; fi
+}
+
+info() { echo -e "${C_BLU}[*]${C_DEF} $1"; }
+ok()   { echo -e "${C_GRN}[✔]${C_DEF} $1"; }
+warn() { echo -e "${C_YEL}[!]${C_DEF} $1"; }
+err()  { echo -e "${C_RED}[✘]${C_DEF} $1"; }
+step() { echo -e "\n${C_CYA}>>> $1${C_DEF}"; }
+
+# ==========================================
+# 2. 全局变量与配置 (已修正本地仓库路径)
+# ==========================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR/dotfiles"
+WALLPAPER_SRC_DIR="$SCRIPT_DIR/Wallpapers"
+FONT_SRC_DIR="$SCRIPT_DIR/fonts"
+BASE_BACKUP_DIR="$HOME/.local/state/shorin-niri-backup"
+BACKUP_DIR="$BASE_BACKUP_DIR/$(date +%Y%m%d_%H%M%S)"
+
+USER_IGNORE_FILE="$HOME/.config/shorin-niri/protected.list"
+CACHE_FILE="$HOME/.local/state/shorin-niri-software.cache"
+
+# ==========================================
+# 3. 软件清单列表 (Fedora 可用标准包名)
+# ==========================================
+TARGET_SOFTWARE=(
+    # --- Niri Desktop Core ---
+    "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
+    # --- Desktop Extras & Media ---
+    "breeze-cursor-theme" "mpv" "wf-recorder" "imv"
+    # --- Fonts ---
+    "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-nerd-fonts"
+    # --- File Manager & Core Utils ---
+    "nautilus" "thunar" "file-roller" "gvfs-smb" "gvfs-mtp" "gvfs-gphoto2"
+    "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer" 
+    "xdg-desktop-portal-gtk" "xdg-desktop-portal-gnome" "python3-pillow"
+    "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav" 
+    "thunar-archive-plugin" "thunar-volman"
+    # --- Standard CLI/GUI Packages ---
+    "bat" "xclip" "eza" "fish" "starship" "zoxide"
+    "chafa" "timg" "ImageMagick" "jq" 
+    "pavucontrol" "strace" "kitty" "firefox"
+    "fastfetch" "btop" "gdu"
+    # --- Input Method ---
+    "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
+)
+
+# 系统级强制保护黑名单
+UPDATE_IGNORE=(
+    ".config/gtk-3.0"
+    ".config/gtk-4.0"
+    ".config/mimeapps.list"
+    ".config/xdg-terminals.list"
+    ".config/fcitx5"
+    ".local/share/fcitx5"
+    ".local/themes"
+    ".config/waybar/colors.css"
+    ".cache/wal/colors.json"
+    ".config/fuzzel/colors.ini"
+    ".config/kitty/themes/matugen.conf"
+    ".config/mako/colors.conf"
+    ".config/btop/themes/matugen.theme"
+    ".config/cava/themes/your-theme"
+    ".config/starship.toml"
+    ".config/yazi/theme.toml"
+    ".cache/matugen/recoloricons.sh"
+    ".config/swayosd/colors.css"
+    ".config/fastfetch/config.jsonc"
+    ".cache/matugen/hypr/colors.conf"
+    ".cache/matugen_vscode_inject.json"
+    ".config/obs-studio/themes/matugen.obt"
+)
+
+# ==========================================
+# 4. Sudo 智能探针与保活机制 (Keep-alive)
+# ==========================================
+ask_for_sudo() {
+    if sudo -n true 2>/dev/null; then
+        (while kill -0 "$$" 2>/dev/null; do
+            sudo -n true >/dev/null 2>&1
+            sleep 60
+        done) 2>/dev/null &
+        return 0
+    fi
+
+    step "$(_t "Requesting Administrator Privileges" "请求管理员权限进行环境部署")"
+    info "$(_t "Please enter your password for sudo. It will be cached for the whole process." "请输入您的密码。系统将为整个安装过程保持免密状态。")"
+    
+    sudo -v || {
+        err "$(_t "Sudo authentication failed. Exiting." "密码验证失败，退出程序。")"
+        exit 1
+    }
+
+    (while kill -0 "$$" 2>/dev/null; do
+        sudo -n true >/dev/null 2>&1
+        sleep 60
+    done) 2>/dev/null &
+    
+    ok "$(_t "Sudo privileges acquired and kept alive." "管理员权限获取成功。")"
+}
+
+# ==========================================
+# 5. 软件依赖管理 (Fedora DNF 适配)
+# ==========================================
+# 关键包 - 失败则中止安装
+CRITICAL_SOFTWARE=(
+    "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
+    "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
+)
+
+manage_software() {
+    step "$(_t "Checking Optional Dependencies" "检查并同步全家桶软件")"
+    
+    if ! rpm -q rpmfusion-free-release >/dev/null 2>&1; then
+        info "$(_t "Enabling RPM Fusion repositories..." "正在启用 RPM Fusion 仓库...")"
+        sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+                            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm >/dev/null 2>&1 || true
+    fi
+
+    if [[ -f "$CACHE_FILE" ]]; then
+        local old_software=()
+        mapfile -t old_software < "$CACHE_FILE"
+        local deprecated=()
+        for old_pkg in "${old_software[@]}"; do
+            local found=0
+            for new_pkg in "${TARGET_SOFTWARE[@]}"; do
+                if [[ "$old_pkg" == "$new_pkg" ]]; then found=1; break; fi
+            done
+            if [[ $found -eq 0 ]] && rpm -q "$old_pkg" >/dev/null 2>&1; then
+                deprecated+=("$old_pkg")
+            fi
+        done
+        
+        if [[ ${#deprecated[@]} -gt 0 ]]; then
+            warn "$(_t "The following packages are no longer required by Shorin Niri:" "Shorin Niri 已不再将以下软件作为默认组件:")"
+            for dpkg in "${deprecated[@]}"; do echo -e "  ${C_YEL}- $dpkg${C_DEF}"; done
+            info "$(_t "You can manually remove them: sudo dnf remove ${deprecated[*]}" "如果不需要，可手动清理: sudo dnf remove ${deprecated[*]}")"
+            echo ""
+        fi
+    fi
+
+    local to_install=()
+    for pkg in "${TARGET_SOFTWARE[@]}"; do
+        if ! rpm -q "$pkg" >/dev/null 2>&1; then to_install+=("$pkg"); fi
+    done
+    
+    if [ ${#to_install[@]} -eq 0 ]; then
+        ok "$(_t "All required optional software is already installed." "当前版本的所有配套软件均已安装。")"
+    else
+        info "$(_t "Installing newly added/missing software via DNF..." "正在使用 DNF 静默安装新增或缺失的软件...")"
+        
+        local critical_to_install=()
+        local normal_to_install=()
+        for pkg in "${to_install[@]}"; do
+            local is_critical=0
+            for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
+                if [[ "$pkg" == "$critical_pkg" ]]; then is_critical=1; break; fi
+            done
+            if [[ $is_critical -eq 1 ]]; then
+                critical_to_install+=("$pkg")
+            else
+                normal_to_install+=("$pkg")
+            fi
+        done
+        
+        if [[ ${#critical_to_install[@]} -gt 0 ]]; then
+            info "$(_t "Installing critical packages..." "正在安装关键软件包...")"
+            if ! sudo dnf install -y "${critical_to_install[@]}"; then
+                err "$(_t "Critical package installation failed. Aborting." "关键软件包安装失败，终止安装。")"
+                exit 1
+            fi
+        fi
+        
+        if [[ ${#normal_to_install[@]} -gt 0 ]]; then
+            info "$(_t "Installing optional packages..." "正在安装可选软件包...")"
+            sudo dnf install -y --skip-unavailable "${normal_to_install[@]}"
+        fi
+        
+        local failed_pkgs=()
+        for pkg in "${to_install[@]}"; do
+            if ! rpm -q "$pkg" >/dev/null 2>&1; then 
+                failed_pkgs+=("$pkg")
+            fi
+        done
+
+        if [ ${#failed_pkgs[@]} -eq 0 ]; then
+            ok "$(_t "All missing software installed successfully." "所有缺失软件均已成功安装。")"
+        else
+            local critical_failed=()
+            local optional_failed=()
+            for fpkg in "${failed_pkgs[@]}"; do
+                local is_critical=0
+                for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
+                    if [[ "$fpkg" == "$critical_pkg" ]]; then is_critical=1; break; fi
+                done
+                if [[ $is_critical -eq 1 ]]; then
+                    critical_failed+=("$fpkg")
+                else
+                    optional_failed+=("$fpkg")
+                fi
+            done
+            
+            if [[ ${#critical_failed[@]} -gt 0 ]]; then
+                err "$(_t "Critical packages failed to install:" "以下关键软件包安装失败:")"
+                for fpkg in "${critical_failed[@]}"; do
+                    echo -e "  ${C_RED}- $fpkg${C_DEF}"
+                done
+                exit 1
+            fi
+            
+            if [[ ${#optional_failed[@]} -gt 0 ]]; then
+                warn "$(_t "The following optional packages failed to install:" "以下可选软件包安装失败，请检查网络或软件源:")"
+                for fpkg in "${optional_failed[@]}"; do
+                    echo -e "  ${C_YEL}- $fpkg${C_DEF}"
+                done
+                info "$(_t "Script will continue, but some features might be missing." "脚本将继续执行，但由于软件缺失，部分功能可能无法正常工作。")"
+            fi
+        fi
+    fi
+    
+    local actually_installed=()
+    for pkg in "${TARGET_SOFTWARE[@]}"; do
+        if rpm -q "$pkg" >/dev/null 2>&1; then 
+            actually_installed+=("$pkg")
+        fi
+    done
+
+    if [ ${#actually_installed[@]} -gt 0 ]; then
+        mkdir -p "$(dirname "$CACHE_FILE")"
+        printf "%s\n" "${actually_installed[@]}" > "$CACHE_FILE"
+    fi
+}
+
+read -p "要安装omf吗(y/n): " fuckAllTheMan
+
+if [ "$fuckAllTheMan" == "y" ]; then
+    echo "开始安装..."
+    	curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install > install
+	fish install --path=~/.local/share/omf --config=~/.config/omf
+	omf theme agnoster
+else
+    echo "跳过安装。"
+fi
+
+echo "安装flatpak和zen浏览器"
+flatpak install app.zen_browser.zen
+
+
+# ==========================================
+# 6. 配置保护与同步核心逻辑
+# ==========================================
+build_ignore_list() {
+    ALL_IGNORES=("${UPDATE_IGNORE[@]}")
+    if [[ -f "$USER_IGNORE_FILE" ]]; then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && ALL_IGNORES+=("$line")
+        done < "$USER_IGNORE_FILE"
+    fi
+}
+
+is_ignored() {
+    local target_path="$1"
+    for ignore_rule in "${ALL_IGNORES[@]}"; do
+        if [[ "$target_path" == "$ignore_rule" || "$target_path" == "$ignore_rule/"* ]]; then return 0; fi
+    done
+    return 1
+}
+
+manage_protection() {
+    local action="$1"
+    local target="$2"
+    mkdir -p "$(dirname "$USER_IGNORE_FILE")"
+    touch "$USER_IGNORE_FILE"
+    
+    if [[ "$action" == "list" ]]; then
+        info "$(_t "System protected paths (Hardcoded):" "系统内置保护路径 (硬编码):")"
+        for i in "${UPDATE_IGNORE[@]}"; do echo "  - $i"; done
+        info "$(_t "User protected paths:" "用户自定义保护路径:")"
+        if [[ -s "$USER_IGNORE_FILE" ]]; then sed 's/^/  - /' "$USER_IGNORE_FILE"; else echo "  $(_t "(Empty)" "(空)")"; fi
+        return
+    fi
+    
+    if [[ -z "$target" ]]; then return; fi
+    local abs_path="$(realpath -m "$target")"
+    local clean_home="${HOME%/}"
+    if [[ "$abs_path" != "$clean_home/"* ]]; then err "$(_t "Path must be inside your home directory." "目标路径必须在您的家目录内。")"; return; fi
+    
+    local rel_path="${abs_path#$clean_home/}"
+    if [[ "$action" == "add" ]]; then
+        if grep -Fxq "$rel_path" "$USER_IGNORE_FILE" 2>/dev/null; then info "$(_t "Path is already protected." "已在保护列表中。")"
+        else echo "$rel_path" >> "$USER_IGNORE_FILE"; ok "$(_t "Protected: ~/$rel_path" "已添加保护: ~/$rel_path")"; fi
+    elif [[ "$action" == "remove" ]]; then
+        sed -i "\|^$rel_path$|d" "$USER_IGNORE_FILE" 2>/dev/null; ok "$(_t "Unprotected: ~/$rel_path" "已取消保护: ~/$rel_path")"
+    fi
+}
+
+backup_and_copy() {
+    local base_dir="$1"
+    local rel_path="$2"
+    local src_file="$base_dir/$rel_path"
+    local dest_file="$HOME/$rel_path"
+    local dest_dir="$(dirname "$dest_file")"
+    
+    mkdir -p "$dest_dir"
+    if [[ -e "$dest_file" || -L "$dest_file" ]]; then
+        local backup_file="$BACKUP_DIR/$rel_path"
+        mkdir -p "$(dirname "$backup_file")"
+        cp -a "$dest_file" "$backup_file"
+        rm -f "$dest_file"
+    fi
+    cp -a "$src_file" "$dest_file"
+}
+
+cleanup_old_backups() {
+    if [[ -d "$BASE_BACKUP_DIR" ]]; then
+        local backups=( $(ls -dt "$BASE_BACKUP_DIR"/* 2>/dev/null) )
+        if (( ${#backups[@]} > 2 )); then
+            for (( i=2; i<${#backups[@]}; i++ )); do rm -rf "${backups[i]}"; done
+        fi
+    fi
+}
+
+sync_dotfiles() {
+    local mode="$1"
+    local sync_count=0
+    local skip_count=0
+    build_ignore_list
+    
+    if [[ "$mode" == "update" ]]; then step "$(_t "Updating Configuration Files" "正在更新配置文件")"
+    else step "$(_t "Full Initialization Installation" "全量初始化配置")"; fi
+    
+    if [[ ! -d "$TEMPLATE_DIR" ]]; then err "$(_t "Template directory not found." "错误: 找不到模板目录。")"; exit 1; fi
+    mkdir -p "$BACKUP_DIR"
+    cd "$TEMPLATE_DIR" || exit 1
+    
+    while IFS= read -r -d '' file; do
+        local rel_path="${file#./}"
+        if [[ "$mode" == "update" ]] && is_ignored "$rel_path"; then ((skip_count++)); continue; fi
+        backup_and_copy "$TEMPLATE_DIR" "$rel_path"
+        ((sync_count++))
+    done < <(find . -type f -print0)
+    cleanup_old_backups
+    
+    step "$(_t "Adapting Username" "正在适配用户名")"
+    local replace_count=0
+    cd "$HOME" || true
+    while IFS= read -r -d '' file; do
+        if grep -q "/home/lancetfish" "$file" 2>/dev/null; then
+            sed -i "s|/home/lancetfish|/home/$USER|g" "$file"
+            ((replace_count++))
+        fi
+    done < <(find .config .local -type f -print0 2>/dev/null)
+    ok "$(_t "Replaced placeholder in $replace_count files for user: $USER" "已将 $replace_count 个文件中的占位用户名替换为: $USER")"
+    
+    ok "$(_t "Synced $sync_count files successfully. (Skipped $skip_count files)" "成功同步 $sync_count 个文件。(跳过了 $skip_count 个受保护文件)")"
+}
+
+# ==========================================
+# 7. 环境应用与系统设置
+# ==========================================
+hide_desktop_file() {
+    local source_file="$1"
+    local filename=$(basename "$source_file")
+    local user_dir="$HOME/.local/share/applications"
+    local target_file="$user_dir/$filename"
+    if [[ -f "$source_file" ]]; then
+        mkdir -p "$user_dir"
+        cp -f "$source_file" "$target_file"
+        if grep -q "^NoDisplay=" "$target_file" 2>/dev/null; then sed -i 's/^NoDisplay=.*/NoDisplay=true/' "$target_file"
+        else echo "NoDisplay=true" >> "$target_file"; fi
+    fi
+}
+
+setup_firefox_policies() {
+    local profile_dir
+    local profiles_ini="$HOME/.mozilla/firefox/profiles.ini"
+    
+    if [[ ! -f "$profiles_ini" ]]; then
+        return
+    fi
+    
+    profile_dir=$(grep -A5 '^\[Install' "$profiles_ini" | grep '^Default=' | cut -d= -f2 | head -1)
+    if [[ -z "$profile_dir" ]]; then
+        profile_dir=$(grep '^Path=' "$profiles_ini" | cut -d= -f2 | head -1)
+    fi
+    
+    if [[ -z "$profile_dir" ]]; then
+        return
+    fi
+    
+    local target_dir="$HOME/.mozilla/firefox/$profile_dir"
+    if [[ ! -d "$target_dir" ]]; then
+        return
+    fi
+    
+    local pol_dir="$target_dir/policies"
+    mkdir -p "$pol_dir"
+    cat > "$pol_dir/policies.json" << 'EOF'
+{
+  "policies": {
+    "Extensions": {
+      "Install": [
+        "https://addons.mozilla.org/firefox/downloads/latest/pywalfox/latest.xpi",
+        "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+      ]
+    }
+  }
+}
+EOF
+}
+
+run_hide_desktop_file() {
+    local apps_to_hide=(
+        "lstopo.desktop" "avahi-discover.desktop" "qv4l2.desktop" "qvidcap.desktop" "bssh.desktop" "org.fcitx.Fcitx5.desktop"
+        "org.fcitx.fcitx5-migrator.desktop" "xgps.desktop" "xgpsspeed.desktop" "gvim.desktop" "kbd-layout-viewer5.desktop"
+        "bvnc.desktop" "yazi.desktop" "btop.desktop" "vim.desktop" "nvim.desktop" "nvtop.desktop" "mpv.desktop"
+        "org.gnome.Settings.desktop" "thunar-settings.desktop" "thunar-bulk-rename.desktop" "thunar-volman-settings.desktop"
+        "clipse-gui.desktop" "waypaper.desktop" "xfce4-about.desktop" "cmake-gui.desktop" "assistant.desktop"
+        "qdbusviewer.desktop" "linguist.desktop" "designer.desktop" "org.kde.drkonqi.coredump.gui.desktop"
+        "org.kde.kwrite.desktop" "org.freedesktop.MalcontentControl.desktop" "org.gnome.Nautilus.desktop"
+    )
+    for app in "${apps_to_hide[@]}"; do hide_desktop_file "/usr/share/applications/$app"; done
+}
+
+setup_system_environment() {
+    step "$(_t "Configuring System Environment" "正在配置底层系统与硬件服务")"
+    
+    if systemctl list-unit-files | grep -q '^power-profiles-daemon.service'; then
+        sudo systemctl enable --now power-profiles-daemon.service >/dev/null 2>&1 || true
+    else
+        info "$(_t "power-profiles-daemon not available, skipping." "power-profiles-daemon 不可用，跳过。")"
+    fi
+    
+    if getent group i2c >/dev/null 2>&1; then
+        sudo gpasswd -a "$USER" i2c >/dev/null 2>&1 || true
+    else
+        info "$(_t "i2c group not found, skipping." "i2c 组不存在，跳过。")"
+    fi
+    
+    if ! grep -q "i2c-dev" /etc/modules-load.d/i2c-dev.conf 2>/dev/null; then
+        echo "i2c-dev" | sudo tee /etc/modules-load.d/i2c-dev.conf >/dev/null 2>&1 || true
+    fi
+    
+    setup_firefox_policies
+}
+
+apply_user_configs() {
+    step "$(_t "Applying User Environment Settings" "正在应用用户环境设置")"
+    LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8 xdg-user-dirs-update --force || true
+    mkdir -p "$HOME/.config"
+    if ! grep -q "kitty.desktop" "$HOME/.config/xdg-terminals.list" 2>/dev/null; then echo 'kitty.desktop' >> "$HOME/.config/xdg-terminals.list"; fi
+    
+    if command -v gsettings >/dev/null 2>&1; then
+        gsettings set org.gnome.desktop.interface color-scheme "prefer-dark" 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark" 2>/dev/null || true
+        gsettings set org.gnome.desktop.wm.preferences button-layout ":close" 2>/dev/null || true
+    fi
+    
+    mkdir -p "$HOME/Templates"
+    touch "$HOME/Templates/new"
+    echo '#!/usr/bin/env bash' > "$HOME/Templates/new.sh" && chmod +x "$HOME/Templates/new.sh"
+    
+    if command -v flatpak >/dev/null 2>&1; then
+        flatpak override --user --filesystem=xdg-data/themes 2>/dev/null || true
+        flatpak override --user --filesystem="$HOME/.themes" 2>/dev/null || true
+        flatpak override --user --filesystem=xdg-config/gtk-4.0 2>/dev/null || true
+        flatpak override --user --filesystem=xdg-config/gtk-3.0 2>/dev/null || true
+        flatpak override --user --env=GTK_THEME=adw-gtk3-dark 2>/dev/null || true
+        flatpak override --user --filesystem=xdg-config/fontconfig 2>/dev/null || true
+    fi
+    
+    mkdir -p "$HOME/.local/share" "$HOME/.local/bin"
+    ln -sfn /usr/share/themes "$HOME/.local/share/themes"
+    if command -v kitty >/dev/null 2>&1; then ln -sfn /usr/bin/kitty "$HOME/.local/bin/xterm"; fi
+    
+    run_hide_desktop_file
+    
+    if [[ -d "$WALLPAPER_SRC_DIR" ]]; then
+        local wp_dest="$HOME/Pictures/Wallpapers"
+        mkdir -p "$wp_dest"
+        cp -an "$WALLPAPER_SRC_DIR"/. "$wp_dest/" || true
+    fi
+    
+    if [[ -d "$FONT_SRC_DIR" ]]; then
+        local font_dest="$HOME/.local/share/fonts"
+        mkdir -p "$font_dest"
+        cp -an "$FONT_SRC_DIR"/. "$font_dest/" || true
+        fc-cache -f 2>/dev/null || true
+        ok "$(_t "Nerd Fonts installed successfully." "Nerd 字体安装完成。")"
+    fi
+    
+    mkdir -p "$HOME/.config/niri/dms"
+    touch "$HOME/.config/niri/dms/colors.kdl"
+    
+    local doc_src="$SCRIPT_DIR/README-Niri.txt"
+    if [[ -f "$doc_src" ]]; then cp -n "$doc_src" "$HOME/必看-shoirn-Niri使用方法.txt" 2>/dev/null || true; fi
+    
+    ok "$(_t "Environment initialization complete!" "环境初始化全部完成！")"
+}
+
+remove_dotfiles() {
+    step "$(_t "Uninstall & Cleanup" "卸载与清理")"
+    warn "$(_t "WARNING: This will remove all managed configs!" "警告：这将移除家目录下所有受管理的配置文件！")"
+    read -p "$(_t "Are you sure you want to continue? [y/N] " "确定要继续清理吗？ [y/N] ")" confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then return; fi
+    
+    ask_for_sudo
+    
+    if [[ ! -d "$TEMPLATE_DIR" ]]; then exit 1; fi
+    cd "$TEMPLATE_DIR" || exit 1
+    
+    local removed_count=0
+    while IFS= read -r -d '' file; do
+        local dest_file="$HOME/${file#./}"
+        if [[ -e "$dest_file" || -L "$dest_file" ]]; then rm -f "$dest_file"; ((removed_count++)); fi
+    done < <(find . -type f -print0)
+    
+    rm -f "$HOME/.config/niri/dms/colors.kdl" "$HOME/必看-shoirn-Niri使用方法.txt" 2>/dev/null
+    rmdir "$HOME/.config/niri/dms" 2>/dev/null
+    
+    local profiles_ini="$HOME/.mozilla/firefox/profiles.ini"
+    if [[ -f "$profiles_ini" ]]; then
+        local profile_dir
+        profile_dir=$(grep -A5 '^\[Install' "$profiles_ini" | grep '^Default=' | cut -d= -f2 | head -1)
+        if [[ -z "$profile_dir" ]]; then
+            profile_dir=$(grep '^Path=' "$profiles_ini" | cut -d= -f2 | head -1)
+        fi
+        if [[ -n "$profile_dir" ]]; then
+            rm -f "$HOME/.mozilla/firefox/$profile_dir/policies/policies.json" 2>/dev/null
+            rmdir "$HOME/.mozilla/firefox/$profile_dir/policies" 2>/dev/null
+        fi
+    fi
+    
+    ok "$(_t "Cleanup complete! Removed $removed_count files." "配置清理完成！精准移除了 $removed_count 个核心配置文件。")"
+
+    if [[ -f "$CACHE_FILE" ]]; then
+        local cached_pkgs=()
+        mapfile -t cached_pkgs < "$CACHE_FILE"
+        local installed_pkgs=()
+
+        for pkg in "${cached_pkgs[@]}"; do
+            if rpm -q "$pkg" >/dev/null 2>&1; then
+                installed_pkgs+=("$pkg")
+            fi
+        done
+
+        if [[ ${#installed_pkgs[@]} -gt 0 ]]; then
+            step "$(_t "Software Cleanup Suggestion" "配套软件清理建议")"
+            info "$(_t "You can manually remove them using DNF:" "如果您确定不再需要它们，可使用以下命令清理：")"
+            echo -e "    ${C_RED}sudo dnf remove ${installed_pkgs[*]}${C_DEF}"
+            echo ""
+        fi
+        rm -f "$CACHE_FILE"
+    fi
+}
+
+# ==========================================
+# 8. 路由入口
+# ==========================================
+case "$1" in
+    init) 
+        ask_for_sudo
+        manage_software
+        sync_dotfiles "init"
+        setup_system_environment
+        apply_user_configs 
+        ;;
+    update) 
+        ask_for_sudo
+        manage_software
+        sync_dotfiles "update" 
+        ;;
+    remove) remove_dotfiles ;;
+    protect) manage_protection "add" "$2" ;;
+    unprotect) manage_protection "remove" "$2" ;;
+    protected-list) manage_protection "list" ;;
+    hide-icons) run_hide_desktop_file ;;
+    *)
+        echo -e "${C_BLU}Usage:${C_DEF} shorinniri {init|update|remove|protect|unprotect|protected-list|hide-icons}"
+        exit 1
+    ;;
+esac

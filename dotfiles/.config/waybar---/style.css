@@ -1,0 +1,299 @@
+/* ============================================
+   LIQUID GLASS WAYBAR - Niri Edition
+   Adapted for matugen colors & BitstromWera fonts
+   ============================================ */
+
+@import "colors.css";
+
+/* Kill ALL GTK shadows */
+* {
+    font-family: "BitstromWera Nerd Font Propo","LXGW WenKai Screen","Font Awesome 7 Free";
+    font-size: 13px;
+    border: none;
+    border-radius: 0;
+    min-height: 0;
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    box-shadow: none;
+}
+
+window#waybar {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+}
+window#waybar > box {
+    box-shadow: none;
+    border: none;
+    background: transparent;
+}
+
+/* ---- LIQUID GLASS PILLS (using matugen colors) ---- */
+.modules-left,
+.modules-center,
+.modules-right {
+    border-radius: 16px;
+    margin: 4px 0;
+    box-shadow:
+        0 3px 16px rgba(0, 0, 0, 0.2),
+        0 1px 2px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+/* Left pill - primary tint */
+.modules-left {
+    background: linear-gradient(
+        135deg,
+        alpha(@primary, 0.25) 0%,
+        alpha(@surface_container, 0.9) 40%,
+        alpha(@primary_container, 0.3) 100%
+    );
+    border-top: 1px solid alpha(@primary, 0.4);
+    border-left: 1px solid alpha(@primary, 0.25);
+    border-right: 1px solid alpha(@primary, 0.1);
+    border-bottom: 1px solid alpha(@primary, 0.05);
+    padding: 0 4px;
+}
+
+/* Center pill - secondary tint */
+.modules-center {
+    background: linear-gradient(
+        135deg,
+        alpha(@secondary, 0.28) 0%,
+        alpha(@surface_container, 0.9) 40%,
+        alpha(@secondary_container, 0.35) 100%
+    );
+    border-top: 1px solid alpha(@secondary, 0.45);
+    border-left: 1px solid alpha(@secondary, 0.28);
+    border-right: 1px solid alpha(@secondary, 0.12);
+    border-bottom: 1px solid alpha(@secondary, 0.05);
+    padding: 0 14px;
+}
+
+/* Right pill - tertiary tint */
+.modules-right {
+    background: linear-gradient(
+        135deg,
+        alpha(@tertiary, 0.25) 0%,
+        alpha(@surface_container, 0.9) 40%,
+        alpha(@tertiary_container, 0.3) 100%
+    );
+    border-top: 1px solid alpha(@tertiary, 0.4);
+    border-left: 1px solid alpha(@tertiary, 0.25);
+    border-right: 1px solid alpha(@tertiary, 0.1);
+    border-bottom: 1px solid alpha(@tertiary, 0.05);
+    padding: 0 4px;
+}
+
+/* ---- BASE MODULES ---- */
+#workspaces,
+#window,
+#clock,
+#network,
+#bluetooth,
+#battery,
+#pulseaudio,
+#cpu,
+#memory,
+#temperature,
+#tray,
+#custom-distro,
+#custom-separator,
+#custom-clipboard {
+    padding: 0 6px;
+    color: alpha(@on_surface, 0.9);
+    background: transparent;
+    box-shadow: none;
+}
+
+/* ---- SEPARATOR ---- */
+#custom-separator {
+    color: alpha(@on_surface_variant, 0.3);
+    font-size: 13px;
+    padding: 0 2px;
+    letter-spacing: 0;
+}
+
+/* ---- DISTRO LOGO ---- */
+#custom-distro {
+    color: alpha(@primary, 0.95);
+    font-size: 16px;
+    padding: 0 8px 0 6px;
+}
+#custom-distro:hover {
+    color: @primary;
+}
+
+/* ---- WORKSPACES ---- */
+#workspaces button {
+    padding: 1px 10px;
+    margin: 3px 1px;
+    border-radius: 10px;
+    color: alpha(@on_surface_variant, 0.5);
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 24px;
+    box-shadow: none;
+}
+
+#workspaces button:hover {
+    background: alpha(@primary, 0.18);
+    color: @on_surface;
+    border-color: alpha(@primary, 0.3);
+    box-shadow: inset 0 1px 0 alpha(@primary, 0.35);
+}
+
+#workspaces button.active {
+    background: linear-gradient(
+        135deg,
+        alpha(@primary, 0.35) 0%,
+        alpha(@primary_container, 0.2) 100%
+    );
+    color: @on_primary;
+    border-top: 1px solid alpha(@primary, 0.5);
+    border-left: 1px solid alpha(@primary, 0.35);
+    border-right: 1px solid alpha(@primary, 0.15);
+    border-bottom: 1px solid alpha(@primary, 0.05);
+    box-shadow:
+        0 2px 8px alpha(@primary, 0.15),
+        inset 0 1.5px 0 alpha(@on_primary, 0.3);
+    font-weight: 800;
+}
+
+#workspaces button.urgent {
+    background: alpha(@error, 0.2);
+    color: alpha(@error, 1);
+    border-color: alpha(@error, 0.3);
+}
+
+/* ---- WINDOW TITLE ---- */
+#window {
+    color: alpha(@on_surface, 0.75);
+    font-size: 13px;
+    font-style: normal;
+    letter-spacing: 0.02em;
+    padding: 0 10px;
+}
+
+/* ---- CLOCK — glowing centerpiece ---- */
+#clock {
+    color: @on_surface;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 0 4px;
+    text-shadow:
+        0 0 8px alpha(@primary, 0.5),
+        0 0 18px alpha(@primary, 0.2),
+        0 0 30px alpha(@primary, 0.08);
+}
+
+/* ---- CLIPBOARD ---- */
+#custom-clipboard {
+    color: alpha(@on_surface, 0.8);
+    font-size: 14px;
+    padding: 0 8px;
+}
+#custom-clipboard:hover {
+    color: @on_surface;
+    background: alpha(@secondary, 0.15);
+    border-radius: 10px;
+}
+
+/* ---- RIGHT MODULES ---- */
+#pulseaudio { color: alpha(@on_surface, 0.8); }
+#pulseaudio.muted { color: alpha(@on_surface_variant, 0.3); }
+
+#network { color: alpha(@on_surface, 0.8); }
+#network.disconnected { color: alpha(@error, 0.85); }
+
+#bluetooth { color: alpha(@on_surface, 0.8); }
+#bluetooth.connected { color: @tertiary; }
+
+#cpu { color: alpha(@on_surface, 0.8); }
+#memory { color: alpha(@on_surface, 0.8); }
+#temperature { color: alpha(@on_surface, 0.8); }
+#temperature.critical {
+    color: alpha(@error, 0.95);
+    animation: blink 1s ease-in-out infinite;
+}
+
+#battery { color: alpha(@on_surface, 0.8); }
+#battery.warning { color: alpha(@warning, 0.92); }
+#battery.critical {
+    color: alpha(@error, 0.95);
+    animation: blink 1s ease-in-out infinite;
+}
+#battery.charging { color: alpha(@tertiary, 0.92); }
+#battery.plugged { color: alpha(@tertiary, 0.92); }
+
+/* ---- HOVER — wet glass ripple ---- */
+#cpu:hover,
+#memory:hover,
+#network:hover,
+#pulseaudio:hover,
+#battery:hover,
+#temperature:hover,
+#bluetooth:hover {
+    color: @on_surface;
+    background: linear-gradient(
+        135deg,
+        alpha(@surface_bright, 0.25) 0%,
+        alpha(@surface_container_high, 0.12) 100%
+    );
+    border-radius: 12px;
+    box-shadow:
+        inset 0 1px 0 alpha(@on_surface, 0.1),
+        0 1px 4px alpha(@shadow, 0.15);
+}
+
+/* ---- TRAY ---- */
+#tray {
+    padding: 0 8px;
+    box-shadow: none;
+}
+#tray > .passive { -gtk-icon-effect: dim; }
+#tray > .needs-attention {
+    -gtk-icon-effect: highlight;
+    background: alpha(@error, 0.18);
+    border-radius: 8px;
+}
+
+/* ---- TOOLTIP ---- */
+tooltip {
+    background: linear-gradient(
+        135deg,
+        alpha(@surface_container_lowest, 0.95) 0%,
+        alpha(@surface_container_low, 0.98) 100%
+    );
+    border-top: 1px solid alpha(@primary, 0.25);
+    border-left: 1px solid alpha(@primary, 0.14);
+    border-right: 1px solid alpha(@primary, 0.06);
+    border-bottom: 1px solid alpha(@primary, 0.04);
+    border-radius: 14px;
+    color: @on_surface;
+    padding: 8px 14px;
+    box-shadow:
+        0 8px 32px alpha(@shadow, 0.4),
+        inset 0 1px 0 alpha(@primary, 0.15);
+}
+tooltip label { color: @on_surface; }
+
+/* ---- ANIMATIONS ---- */
+@keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.25; }
+    100% { opacity: 1; }
+}
+
+/* Fine-tune margins */
+.modules-left,
+.modules-center,
+.modules-right {
+    margin: 3px 0;
+}

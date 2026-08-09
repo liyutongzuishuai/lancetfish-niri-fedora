@@ -1,0 +1,58 @@
+
+【可以查阅的文档】
+ArchWiki: https://wiki.archlinux.org/title/Main_page
+NiriWiki: https://github.com/niri-wm/niri/wiki
+ShorinArch: https://shorin.xyz/wiki
+Shorin一键配置脚本: https://shorin.xyz/wiki/archsetup
+
+【重要工具】
+shorinniri命令可以对shorinniri桌面进行init初始化、update更新、remove移除等操作，操作前都会备份配置文件到.cache下，如果你有东西被意外覆盖可以去找回。详情看shorinniri命令的帮助信息。
+
+【Ai助手】
+有一个叫作opencode的开源ai助手，默认键位是Mod+Alt+O（英文字母O），有免费模型可以用。如果有查找文件、查询系统信息之类的简单的需求直接询问这个Ai助手，例如："我的快捷键配置文件在哪里？""我要怎么安装软件"等。PS: 谨慎使用ai修改文件。如果你不需要可以`yay -Rns opencode删除`
+
+【重要按键】
+super+shift+/ 打开按键教程
+详细的按键注释看~/.config/niri里的binds.kdl文件。
+
+【输入法】
+super+空格切换输入法。第一次使用输入法有可能无法使用，重启一下输入法可以解决。
+切换为中文后f4可以打开菜单。如果出现卡A的情况可以试试按右shift解决。
+使用fcitx5-configtool可以对输入法进行细节配置
+【输入法Ai大模型联想词】
+我自制了`rime-llm-translator`功能，给输入法接入ai进行云拼音联想，还可以在输入法直接跟ai聊天。你可以试试打一些拼音然后输入vv呼叫ai进行处理，还可以试试“call:随便什么指令”。我事先准备的硅基流动的免费模型效果很垃圾，你可以运行`rime-llm-conffig`命令配置你自己的ai。我试下来效果最好的是Gemini。
+详情看仓库：https://github.com/SHORiN-KiWATA/rime-llm-translator
+
+
+【waybar-niri-taskbar-git】
+这是一个waybar的dock模块，在waybar上显示已打开的应用，感兴趣的可以安装这个包后编辑~/.config/waybar/config.jsonc启用taskbar模块（注意：这个模块仅支持发行版本的niri）。
+
+【有趣实用的TUI软件（基于终端的用户交互程序）】
+命令：作用
+gdu：磁盘空间管理
+nmtui：网络配置工具
+impala：wifi连接工具，tab键切换，上下左右选择，回车确认（需要iwd后端）
+btop：任务管理器
+yazi：文档管理器
+fastfetch：系统信息显示工具
+更多软件信息可以看一键配置脚本的文档。
+
+【运行Windows软件】
+>https://github.com/SHORiN-KiWATA/proton-wrapper
+此功能由 `shorin-proton-wrapper-git` AUR包提供。双击 .exe 文件会自动用“运行Windows软件”打开，会自动使用 DW-Proton 在 ~/.proton 目录初始化运行环境。如果用“设置Windows软件运行环境”打开的话可以进行各种自定义设置，如运行器、MangoHud 屏显（帧数、硬件占用之类的）、GameScope（在如果遇到窗口异常、交互异常的话可以尝试用 GameScope 打开）等。
+
+【如果不想要了或者安装失败了可以回档】
+如果你是用我的shorin-arch-setup脚本安装的，/usr/local/bin下有两个脚本可以用来回档到运行脚本之前的状态。
+回到安装桌面前：shorin-de-undochange
+回到运行脚本前：shorin-undochange
+
+【关于系统维护】
+1. 系统更新
+请一定使用sysup命令更新系统，不要直接pacman -Syu。更新时要注意是否有重要新闻，sysup命令会在更新前自动创建quicksave-sysup快照，如果更新后出现问题可以从任意快照启动项进入系统运行quickload命令回档。
+
+2. 系统清理
+clean命令可以清理软件包缓存、回收站、截图、录屏、超数量上限的快照、btrfs备份子卷等内容。clean all命令可以更进一步，清理所有软件包缓存和所有快照。home目录下的.cache文件内的文件也都是可以安全删除的缓存，不过一股脑删除可能会少用户登录什么的，可以使用gdu寻找大文件删除。
+
+3. 快速存档
+活用btrfs快照存档，我的quicksave命令可以快速创建描述为quicksave的快照，做不了解的事情记得先快速存档（Mod+F5），我设置了合理的快照数量限制，不用担心快照占用磁盘空间，放心存。
+

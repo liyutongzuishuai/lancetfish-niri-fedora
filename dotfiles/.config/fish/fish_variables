@@ -1,0 +1,7 @@
+# This file contains fish universal variable definitions.
+# VERSION: 3.0
+SETUVAR --export EDITOR:vim
+SETUVAR --export FREELLMAPI_API_KEY:freellmapi\x2d366bd017d2bb2f116466cf3146d00b11bccf616b83872f83
+SETUVAR --export VISUAL:vim
+SETUVAR __fish_initialized:4300
+SETUVAR fish_user_paths:/home/lancetfish/\x2eopencode/bin
