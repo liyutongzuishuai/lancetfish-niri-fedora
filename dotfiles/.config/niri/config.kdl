@@ -88,7 +88,7 @@ input {
     mode "1920x1080@120.030"
 
     // You can use integer or fractional scale, for example use 1.5 for 150% scale.
-    scale 2
+    scale 1.3
 
     // Transform allows to rotate the output counter-clockwise, valid values are:
     // normal, 90, 180, 270, flipped, flipped-90, flipped-180 and flipped-270.
@@ -351,6 +351,14 @@ window-rule {
 // Blur behind the foot terminal.
 window-rule {
     match app-id=r#"^foot$"#
+    background-effect {
+        blur true
+    }
+}
+
+// Blur behind the waybar.
+/-layr-rule {
+    match namespace=r#"^waybar$"#
     background-effect {
         blur true
     }
