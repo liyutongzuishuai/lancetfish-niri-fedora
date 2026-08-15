@@ -115,7 +115,11 @@ function f
         set -l URL (get_random_url)
         if string match -qr "^http" -- "$URL"
             # 使用带时间戳的随机文件名
-            set -l FILENAME "waifu_"(date +%s%N)"_"(random)".jpg"
+            set -l EXTENSION (echo "$URL" | awk -F. '{if (NF>1) {print tolower($NF)}}' | head -c 4)
+            if test "$EXTENSION" != "jpg" -a "$EXTENSION" != "png" -a "$EXTENSION" != "jpeg"
+                set -l EXTENSION "jpg"
+            end
+            set -l FILENAME "waifu_"(date +%s%N)"_"(random)."$EXTENSION"
             set -l TARGET_PATH "$CACHE_DIR/$FILENAME"
             
             curl -s -L --connect-timeout 5 --max-time 15 -o "$TARGET_PATH" "$URL"
@@ -160,7 +164,7 @@ function f
             set CACHE_DIR '$CACHE_DIR'
             
             # 1. 补货检查
-            set CURRENT_COUNT (find \$CACHE_DIR -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l)
+            set CURRENT_COUNT (find \$CACHE_DIR -maxdepth 1 \( -name '*.jpg' -o -name '*.png' \) 2>/dev/null | wc -l)
             
             if test \$CURRENT_COUNT -lt $MIN_TRIGGER_LIMIT
                 for i in (seq 1 $DOWNLOAD_BATCH_SIZE)
@@ -170,10 +174,10 @@ function f
             end
             
             # 2. 清理过多库存
-            set FINAL_COUNT (find \$CACHE_DIR -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l)
+            set FINAL_COUNT (find \$CACHE_DIR -maxdepth 1 \( -name '*.jpg' -o -name '*.png' \) 2>/dev/null | wc -l)
             if test \$FINAL_COUNT -gt $MAX_CACHE_LIMIT
                 set DELETE_START_LINE (math $MAX_CACHE_LIMIT + 1)
-                ls -tp \$CACHE_DIR/*.jpg 2>/dev/null | tail -n +\$DELETE_START_LINE | xargs -I {} rm -- '{}'
+                ls -tp \$CACHE_DIR/*.{jpg,png} 2>/dev/null | tail -n +\$DELETE_START_LINE | xargs -I {} rm -- '{}'
             end
         " 200>"$LOCK_FILE" &
         
@@ -183,11 +187,11 @@ function f
     
     # --- 4. 主程序逻辑 ---
     
-    set -l FILES $CACHE_DIR/*.jpg
+    set -l FILES $CACHE_DIR/*.jpg $CACHE_DIR/*.png
     set -l NUM_FILES (count $FILES)
     
-    # fish 若无匹配文件，$FILES 可能为空或保留模式字符串，需额外判断
-    if test "$NUM_FILES" -eq 1; and not test -f "$FILES[1]"
+    # fish 若无匹配文件，返回空数组，需额外判断第一个元素是否为真实文件
+    if test "$NUM_FILES" -gt 0; and not test -f "$FILES[1]"
         set NUM_FILES 0
         set FILES
     end
@@ -203,34 +207,37 @@ function f
         background_job >/dev/null 2>&1
     else
         # 没库存，输出多语言提示语并增加网络连通性容错
-        echo "$MSG_WAIT"
-        
-        if check_network
-            download_one_image
-        else
-            echo "$MSG_NET_ERR"
-        end
-        
-        set FILES $CACHE_DIR/*.jpg
-        if test -f "$FILES[1]"
-            set SELECTED_IMG "$FILES[1]"
-            background_job >/dev/null 2>&1
-        end
+            echo "$MSG_WAIT"
+            
+            if check_network
+                download_one_image
+            else
+                echo "$MSG_NET_ERR"
+            end
+            
+            set FILES $CACHE_DIR/*.jpg $CACHE_DIR/*.png
+            set NUM_FILES (count $FILES)
+            if test "$NUM_FILES" -gt 0; and test -f "$FILES[1]"
+                set SELECTED_IMG "$FILES[1]"
+                background_job >/dev/null 2>&1
+            end
     end
     
     # 运行 Fastfetch
     if test -n "$SELECTED_IMG"; and test -f "$SELECTED_IMG"
-        # 用 chafa 渲染图片为字符画，再通过 --file-raw 传给 fastfetch 作为 logo
-        set -l TMP_LOGO (mktemp /tmp/waifu_logo.XXXXXX)
-        chafa --symbols=block --size=20x10 "$SELECTED_IMG" 2>/dev/null >"$TMP_LOGO"
-        fastfetch --file-raw "$TMP_LOGO" $ARGS_FOR_FASTFETCH
-        rm -f "$TMP_LOGO"
+        # 直接使用 fastfetch 的原生 Sixel 渲染
+        # 强制 logo-type 为 sixel 以获得最高清晰度
+        fastfetch --logo "$SELECTED_IMG" \
+                  --logo-type sixel \
+                  --logo-width 30 \
+                  --logo-padding 3 \
+                  $ARGS_FOR_FASTFETCH
         
         # === 逻辑: 移动到 used 目录 ===
         mv "$SELECTED_IMG" "$USED_DIR/"
         
         # === 逻辑: 检查 used 目录并清理旧图 ===
-        set -l used_files $USED_DIR/*.jpg
+        set -l used_files $USED_DIR/*.jpg $USED_DIR/*.png
         set -l used_count (count $used_files)
         
         # 再次确认 count
@@ -243,7 +250,7 @@ function f
             set -l skip_lines (math "$MAX_USED_LIMIT" + 1)
             
             # 列出所有文件按时间倒序，取尾部，删除
-            set -l files_to_delete (ls -tp "$USED_DIR"/*.jpg 2>/dev/null | tail -n +$skip_lines)
+            set -l files_to_delete (ls -tp $USED_DIR/*.jpg $USED_DIR/*.png 2>/dev/null | tail -n +$skip_lines)
             
             if test -n "$files_to_delete"
                 rm -- $files_to_delete
