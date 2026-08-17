@@ -22,3 +22,4 @@
 ## 致谢
 
 感谢 [SHORiN-KiWATA](https://github.com/SHORiN-KiWATA) 提供的优秀 Niri 桌面配置方案。
+感谢 [ThousandPairsThousandWings](https://github.com/ThousandPairsThousandWings/niri-withstar-animations-open-and-close-windows.git)提供的漂亮的动画
