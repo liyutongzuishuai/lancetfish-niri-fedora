@@ -62,7 +62,7 @@ TARGET_SOFTWARE=(
     "bat" "xclip" "eza" "fish" "starship" "zoxide"
     "chafa" "timg" "ImageMagick" "jq"
     "pavucontrol" "strace" "kitty" "foot" "yazi" "firefox"
-    "vim" "nvim" "fastfetch" "btop" "gdu"
+    "vim" "nvim" "nodejs" "npm" "fastfetch" "btop" "gdu"
     # --- Input Method ---
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
 )
@@ -571,7 +571,7 @@ remove_dotfiles() {
 # 8. 路由入口
 # ==========================================
 case "$1" in
-    init) 
+    init)
         ask_for_sudo
         manage_software
         sync_dotfiles "init"
@@ -607,6 +607,16 @@ case "$1" in
             fi
         else
             info "$(_t "Skipping optional components." "跳过可选组件安装。")"
+        fi
+
+        # 自动安装 Vim/Neovim 插件
+        if command -v vim >/dev/null 2>&1; then
+            info "$(_t "Installing Vim plugins via PlugInstall..." "正在通过 PlugInstall 安装 Vim 插件...")"
+            vim +PlugInstall +qall >/dev/null 2>&1 || warn "$(_t "PlugInstall failed. Please run vim manually to finish plugin setup." "PlugInstall 失败。请手动打开 vim 完成插件安装。")"
+        fi
+        if command -v nvim >/dev/null 2>&1; then
+            info "$(_t "Installing Neovim plugins via PlugInstall..." "正在通过 PlugInstall 安装 Neovim 插件...")"
+            nvim +PlugInstall +qall >/dev/null 2>&1 || warn "$(_t "PlugInstall failed. Please run nvim manually to finish plugin setup." "PlugInstall 失败。请手动打开 nvim 完成插件安装。")"
         fi
         ;;
     update) 
