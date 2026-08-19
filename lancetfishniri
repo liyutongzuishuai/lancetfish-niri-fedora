@@ -582,7 +582,8 @@ case "$1" in
         read -p "$(_t "Install OMF (Oh My Fish) and Zen Browser? [y/N] " "是否安装 OMF (Oh My Fish) 和 Zen 浏览器? [y/N] ")" install_extra
         if [[ "$install_extra" =~ ^[Yy]$ ]]; then
             info "$(_t "Installing OMF..." "正在安装 OMF...")"
-            if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish --path=~/.local/share/omf --config=~/.config/omf; then
+            # 使用官方推荐的安装方式（自动处理路径配置）
+            if curl -sL https://get.oh-my.fish | fish; then
                 # 验证OMF是否真的被正确安装
                 if [[ -f "$HOME/.local/share/omf/init.fish" && -s "$HOME/.local/share/omf/init.fish" ]]; then
                     info "$(_t "OMF installed successfully." "OMF 安装成功。")"
