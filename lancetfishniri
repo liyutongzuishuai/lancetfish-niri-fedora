@@ -583,11 +583,17 @@ case "$1" in
         if [[ "$install_extra" =~ ^[Yy]$ ]]; then
             info "$(_t "Installing OMF..." "正在安装 OMF...")"
             if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish --path=~/.local/share/omf --config=~/.config/omf; then
-                info "$(_t "OMF installed successfully." "OMF 安装成功。")"
-                if fish -c "omf install agnoster; omf theme agnoster"; then
-                    ok "$(_t "Agnoster theme installed and set." "Agnoster 主题已安装并设置。")"
+                # 验证OMF是否真的被正确安装
+                if [[ -f "$HOME/.local/share/omf/init.fish" && -s "$HOME/.local/share/omf/init.fish" ]]; then
+                    info "$(_t "OMF installed successfully." "OMF 安装成功。")"
+                    if fish -c "omf install agnoster; omf theme agnoster"; then
+                        ok "$(_t "Agnoster theme installed and set." "Agnoster 主题已安装并设置。")"
+                    else
+                        warn "$(_t "Failed to install agnoster theme." "无法安装 agnoster 主题。")"
+                    fi
                 else
-                    warn "$(_t "Failed to install agnoster theme." "无法安装 agnoster 主题。")"
+                    err "$(_t "OMF installation appeared to succeed but verification failed." "OMF 安装似乎成功但验证失败。")"
+                    err "$(_t "Please try again or install manually: curl -L https://get.oh-my.fish | fish" "请尝试重新安装或手动安装：curl -L https://get.oh-my.fish | fish")"
                 fi
             else
                 err "$(_t "OMF installation failed. Please check your internet connection." "OMF 安装失败。请检查您的网络连接。")"
