@@ -62,7 +62,7 @@ TARGET_SOFTWARE=(
     "bat" "xclip" "eza" "fish" "starship" "zoxide"
     "chafa" "timg" "ImageMagick" "jq"
     "pavucontrol" "strace" "kitty" "foot" "yazi" "firefox"
-    "fastfetch" "btop" "gdu"
+    "vim" "nvim" "fastfetch" "btop" "gdu"
     # --- Input Method ---
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
 )
