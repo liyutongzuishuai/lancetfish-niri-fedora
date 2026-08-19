@@ -60,8 +60,8 @@ TARGET_SOFTWARE=(
     "thunar-archive-plugin" "thunar-volman"
     # --- Standard CLI/GUI Packages ---
     "bat" "xclip" "eza" "fish" "starship" "zoxide"
-    "chafa" "timg" "ImageMagick" "jq" 
-    "pavucontrol" "strace" "kitty" "firefox"
+    "chafa" "timg" "ImageMagick" "jq"
+    "pavucontrol" "strace" "kitty" "foot" "firefox"
     "fastfetch" "btop" "gdu"
     # --- Input Method ---
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
@@ -252,22 +252,6 @@ manage_software() {
         printf "%s\n" "${actually_installed[@]}" > "$CACHE_FILE"
     fi
 }
-
-read -p "要安装omf吗(y/n): " fuckAllTheMan
-
-if [ "$fuckAllTheMan" == "y" ]; then
-    echo "开始安装..."
-    	curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install > install
-	fish install --path=~/.local/share/omf --config=~/.config/omf
-	omf install agnoster
-	omf theme agnoster
-else
-    echo "跳过安装。"
-fi
-
-echo "安装flatpak和zen浏览器"
-flatpak install app.zen_browser.zen
-
 
 # ==========================================
 # 6. 配置保护与同步核心逻辑
@@ -472,6 +456,7 @@ apply_user_configs() {
     LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8 xdg-user-dirs-update --force || true
     mkdir -p "$HOME/.config"
     if ! grep -q "kitty.desktop" "$HOME/.config/xdg-terminals.list" 2>/dev/null; then echo 'kitty.desktop' >> "$HOME/.config/xdg-terminals.list"; fi
+if ! grep -q "foot.desktop" "$HOME/.config/xdg-terminals.list" 2>/dev/null; then echo 'foot.desktop' >> "$HOME/.config/xdg-terminals.list"; fi
     
     if command -v gsettings >/dev/null 2>&1; then
         gsettings set org.gnome.desktop.interface color-scheme "prefer-dark" 2>/dev/null || true
@@ -494,7 +479,12 @@ apply_user_configs() {
     
     mkdir -p "$HOME/.local/share" "$HOME/.local/bin"
     ln -sfn /usr/share/themes "$HOME/.local/share/themes"
-    if command -v kitty >/dev/null 2>&1; then ln -sfn /usr/bin/kitty "$HOME/.local/bin/xterm"; fi
+    # 创建 xterm 链接，优先使用 foot，然后是 kitty
+if command -v foot >/dev/null 2>&1; then
+    ln -sfn /usr/bin/foot "$HOME/.local/bin/xterm"
+elif command -v kitty >/dev/null 2>&1; then
+    ln -sfn /usr/bin/kitty "$HOME/.local/bin/xterm"
+fi
     
     run_hide_desktop_file
     
@@ -586,7 +576,32 @@ case "$1" in
         manage_software
         sync_dotfiles "init"
         setup_system_environment
-        apply_user_configs 
+        apply_user_configs
+
+        # 可选: 安装 OMF (Oh My Fish) 和 Zen 浏览器
+        read -p "$(_t "Install OMF (Oh My Fish) and Zen Browser? [y/N] " "是否安装 OMF (Oh My Fish) 和 Zen 浏览器? [y/N] ")" install_extra
+        if [[ "$install_extra" =~ ^[Yy]$ ]]; then
+            info "$(_t "Installing OMF..." "正在安装 OMF...")"
+            if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish --path=~/.local/share/omf --config=~/.config/omf; then
+                info "$(_t "OMF installed successfully." "OMF 安装成功。")"
+                if fish -c "omf install agnoster; omf theme agnoster"; then
+                    ok "$(_t "Agnoster theme installed and set." "Agnoster 主题已安装并设置。")"
+                else
+                    warn "$(_t "Failed to install agnoster theme." "无法安装 agnoster 主题。")"
+                fi
+            else
+                err "$(_t "OMF installation failed. Please check your internet connection." "OMF 安装失败。请检查您的网络连接。")"
+            fi
+
+            info "$(_t "Installing Zen Browser via Flatpak..." "正在通过 Flatpak 安装 Zen 浏览器...")"
+            if flatpak install -y flathub app.zen_browser.zen; then
+                ok "$(_t "Zen Browser installed successfully." "Zen 浏览器安装成功。")"
+            else
+                warn "$(_t "Failed to install Zen Browser. You can install it later with: flatpak install flathub app.zen_browser.zen" "无法安装 Zen 浏览器。您可以稍后使用以下命令安装：flatpak install flathub app.zen_browser.zen")"
+            fi
+        else
+            info "$(_t "Skipping optional components." "跳过可选组件安装。")"
+        fi
         ;;
     update) 
         ask_for_sudo
