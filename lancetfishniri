@@ -128,7 +128,7 @@ ask_for_sudo() {
 CRITICAL_SOFTWARE=(
     "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
-    "vim" "nvim" "nodejs" "npm" "foot" "yazi" "kitty"
+    "vim" "nvim" "nodejs" "npm" "foot" "kitty"
 )
 
 manage_software() {
