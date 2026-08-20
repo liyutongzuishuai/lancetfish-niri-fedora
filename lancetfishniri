@@ -62,7 +62,7 @@ TARGET_SOFTWARE=(
     "bat" "xclip" "eza" "fish" "starship" "zoxide"
     "chafa" "timg" "ImageMagick" "jq"
     "pavucontrol" "strace" "kitty" "foot" "yazi" "firefox"
-    "vim" "nvim" "nodejs" "npm" "fastfetch" "btop" "gdu"
+    "vim-enhanced" "neovim" "nodejs20" "nodejs20-npm" "fastfetch" "btop" "gdu"
     # --- Input Method ---
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
 )
@@ -124,11 +124,11 @@ ask_for_sudo() {
 # ==========================================
 # 5. 软件依赖管理 (Fedora DNF 适配)
 # ==========================================
-# 关键包 - 失败则中止安装
+# 关键包 - 失败则中止安装（Niri 桌面环境核心组件）
 CRITICAL_SOFTWARE=(
     "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
     "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
-    "vim" "nvim" "nodejs" "npm" "foot" "kitty"
+    "vim-enhanced" "neovim" "nodejs20" "nodejs20-npm" "foot" "kitty"
 )
 
 manage_software() {
