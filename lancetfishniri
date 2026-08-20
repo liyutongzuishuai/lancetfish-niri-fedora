@@ -508,6 +508,19 @@ fi
     
     local doc_src="$SCRIPT_DIR/README-Niri.txt"
     if [[ -f "$doc_src" ]]; then cp -n "$doc_src" "$HOME/必看-shoirn-Niri使用方法.txt" 2>/dev/null || true; fi
+
+    # Set fish as default login shell
+    if command -v fish >/dev/null 2>&1; then
+        # Add fish to /etc/shells if not present
+        if ! grep -qx "$(command -v fish)" /etc/shells 2>/dev/null; then
+            sudo sh -c 'echo "$(command -v fish)" >> /etc/shells'
+        fi
+        # Change default shell for current user
+        if [[ "$SHELL" != "$(command -v fish)" ]]; then
+            chsh -s "$(command -v fish)"
+            info "$(_t "Default shell changed to fish." "默认 Shell 已更改为 fish。")"
+        fi
+    fi
     
     ok "$(_t "Environment initialization complete!" "环境初始化全部完成！")"
 }
