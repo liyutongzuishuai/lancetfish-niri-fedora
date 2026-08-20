@@ -583,8 +583,8 @@ case "$1" in
         read -p "$(_t "Install OMF (Oh My Fish) and Zen Browser? [y/N] " "是否安装 OMF (Oh My Fish) 和 Zen 浏览器? [y/N] ")" install_extra
         if [[ "$install_extra" =~ ^[Yy]$ ]]; then
             info "$(_t "Installing OMF..." "正在安装 OMF...")"
-            # 使用官方推荐的安装方式（自动处理路径配置）
-            if curl -sL https://get.oh-my.fish | fish; then
+            # 使用官方推荐的安装方式（使用完整 URL 以避免短链接失效）
+            if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish; then
                 # 验证OMF是否真的被正确安装（非空且无空字节）
                 local omf_init="$HOME/.local/share/omf/init.fish"
                 if [[ -f "$omf_init" && -s "$omf_init" ]] && ! grep -P '\\x00' "$omf_init" 2>/dev/null; then
@@ -596,7 +596,7 @@ case "$1" in
                     fi
                 else
                     err "$(_t "OMF 安装似乎成功但文件损坏或为空。" "OMF installation appeared to succeed but file is corrupted or empty.")"
-                    err "$(_t "请尝试重新安装或手动安装：curl -L https://get.oh-my.fish | fish" "Please try again or install manually: curl -L https://get.oh-my.fish | fish")"
+                    err "$(_t "请尝试重新安装或手动安装：curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish" "Please try again or install manually: curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish")"
                 fi
             else
                 err "$(_t "OMF installation failed. Please check your internet connection." "OMF 安装失败。请检查您的网络连接。")"
