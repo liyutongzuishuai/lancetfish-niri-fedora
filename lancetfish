@@ -1,0 +1,92 @@
+where=$(pwd)
+echo $where
+echo "输入一下sudo 密码哦"
+echo "安装脚本将会偷摸把你的"音乐"，‘下载’，‘视频’等目录换成英语的Music等 （更方便主子cd）不影响兼容性"
+sleep 1
+echo "3"
+sleep 1
+echo "2"
+sleep "1"
+echo "start"
+
+# 1. 修改系统配置文件（让系统知道路径变了）
+sed -i 's/桌面/Desktop/g; s/下载/Downloads/g; s/模板/Templates/g; s/公共/Public/g; s/文档/Documents/g; s/音乐/Music/g; s/图片/Pictures/g; s/视频/Videos/g' ~/.config/user-dirs.dirs 2>/dev/null
+
+# 2. 文件夹重命名
+declare -A DIRS=(["桌面"]="Desktop" ["下载"]="Downloads" ["模板"]="Templates" ["公共"]="Public" ["文档"]="Documents" ["音乐"]="Music" ["图片"]="Pictures" ["视频"]="Videos")
+
+for zh in "${!DIRS[@]}"; do
+    [ -d ~/"$zh" ] && mv ~/"$zh" ~/"${DIRS[$zh]}"
+done
+sudo -v
+mkdir .yourconfigbak
+cp -rf ~/.config/. .yourconfigbak/
+[ -f ~/.vimrc ] && cp -f ~/.vimrc ~/.yourconfigbak/
+cp -rf ./dotfiles/.config/* ~/.config
+cp -rf ./dotfiles/.vimrc ~/.
+cp -rf ./dotfiles/.local/ ~/.local/
+cp -rf ./Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg ~/Pictures/
+echo "（配置已安装完毕）"
+echo "正在为你添加源"
+sudo dnf copr enable alternateved/keyd -y
+sudo dnf copr enable lihaohong/yazi -y
+sudo dnf copr enable phracek/PyCharm -y
+sudo dnf install -y \
+  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf install -y niri waybar swaybg wl-clipboard fuzzel mako wlsunset fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-qt fcitx5-rime vim-enhanced  nodejs npm foot kitty
+echo "安装zen浏览器中"
+flatpak install -y flathub app.zen_browser.zen 2>/dev/null || flatpak install -y app.zen_browser.zen
+echo "马上帮你安装漂亮(nerd)的字体"
+cp -rf ./fonts/. ~/.local/share/fonts/
+sudo fc-cache -fv
+
+# 确保 fish 的路径写入 /etc/shells（如果不在里面的话）
+grep -qx "$(command -v fish)" /etc/shells || echo "$(command -v fish)" | sudo tee -a /etc/shells
+
+# 将当前用户的默认 Shell 改为 fish
+chsh -s $(which fish)
+echo "正在帮你改为深色模式"
+if command -v gsettings >/dev/null 2>&1; then
+    gsettings set org.gnome.desktop.interface color-scheme "prefer-dark" 2>/dev/null || true
+    gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark" 2>/dev/null || true
+    gsettings set org.gnome.desktop.wm.preferences button-layout ":close" 2>/dev/null || true
+fi
+echo "正在配置flatpak"
+if command -v flatpak >/dev/null 2>&1; then
+    flatpak override --user --filesystem=xdg-data/themes 2>/dev/null || true
+    flatpak override --user --filesystem="$HOME/.themes" 2>/dev/null || true
+    flatpak override --user --filesystem=xdg-config/gtk-4.0 2>/dev/null || true
+    flatpak override --user --filesystem=xdg-config/gtk-3.0 2>/dev/null || true
+    flatpak override --user --env=GTK_THEME=adw-gtk3-dark 2>/dev/null || true
+    flatpak override --user --filesystem=xdg-config/fontconfig 2>/dev/null || true
+fi
+echo "正在安装漂亮cli全家桶"
+sudo dnf install -y --skip-unavailable \
+  bat eza zoxide starship btop fastfetch chafa timg jq gdu xclip
+if command -v vim >/dev/null 2>&1; then
+	if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
+		curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
+            		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim 2>/dev/null || true
+    	fi
+    	vim +PlugInstall +qall >/dev/null 2>&1 || true
+fi
+echo "install 美味的omf"
+curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish
+omf install agnoster
+omf theme agnoster
+echo "正在清理应用菜单里的终端工具图标..."
+apps_to_hide=(
+    "lstopo.desktop" "avahi-discover.desktop" "qv4l2.desktop" "qvidcap.desktop"
+    "bssh.desktop" "org.fcitx.Fcitx5.desktop" "yazi.desktop" "btop.desktop"
+    "vim.desktop" "nvim.desktop" "nvtop.desktop" "mpv.desktop"
+)
+mkdir -p "$HOME/.local/share/applications"
+for app in "${apps_to_hide[@]}"; do
+    if [[ -f "/usr/share/applications/$app" ]]; then
+        cp -f "/usr/share/applications/$app" "$HOME/.local/share/applications/"
+        echo "NoDisplay=true" >> "$HOME/.local/share/applications/$app"
+    fi
+done
+echo "已经安装成功了 享受美好fedora生活吧"
+fastfetch
