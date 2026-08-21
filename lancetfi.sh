@@ -90,3 +90,23 @@ for app in "${apps_to_hide[@]}"; do
 done
 echo "已经安装成功了 享受美好fedora生活吧"
 fastfetch
+step "$(_t "Adapting Username" "正在适配用户名")"
+local replace_count=0
+cd "$HOME" || true
+
+# 1. 使用 find 命令以 \0 (null) 分隔递归查找 ~/.config 和 ~/.local 目录下的所有常规文件 (-type f)
+while IFS= read -r -d '' file; do
+
+    # 2. 用 grep 静默检查该文件中是否包含字符串 "/home/lancetfish"
+    if grep -q "/home/lancetfish" "$file" 2>/dev/null; then
+    
+        # 3. 如果包含，就用 sed 命令把 "/home/lancetfish" 全局替换 (-g) 为 "/home/$USER"
+        sed -i "s|/home/lancetfish|/home/$USER|g" "$file"
+        
+        ((replace_count++))
+    fi
+    
+done < <(find .config .local -type f -print0 2>/dev/null)
+
+ok "$(_t "Replaced placeholder in $replace_count files for user: $USER" "已将 $replace_count 个文件中的占位用户名替换为: $USER")"
+
