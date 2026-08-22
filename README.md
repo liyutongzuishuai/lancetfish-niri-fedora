@@ -1,5 +1,5 @@
 # lancetfish-niri-fedora
-
+ 
 基于 [SHORiN-KiWATA/shorin-niri](https://github.com/SHORiN-KiWATA/shorin-niri) 的 Niri 桌面配置，经过个人定制与调整。
 
 > **声明：** 本项目基于 shorin-niri 配置，部分内容由 AI 辅助生成和调整。如果显示网络问题建议开个代理 （fedora如果安装不上karing显示依赖不可用，可以先不用那个依赖 后面慢慢补依赖 不影响） 由于改动巨大所以决定重新设置一个仓库

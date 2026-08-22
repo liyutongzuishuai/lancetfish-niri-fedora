@@ -2,8 +2,8 @@
 
 set -e
 
-where=$(pwd)
-echo "当前工作目录: $where"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "当前工作目录: $SCRIPT_DIR"
 echo "输入一下 sudo 密码哦"
 sudo -v
 
@@ -19,27 +19,62 @@ echo "start"
 # ==========================================
 # 1. 配置软件源 (COPR & RPM Fusion)
 # ==========================================
-echo "正在为你添加源..."
+echo "正在为你添加软件源..."
+
+# 启用 COPR 仓库
 sudo dnf copr enable alternateved/keyd -y || true
 sudo dnf copr enable lihaohong/yazi -y || true
 sudo dnf copr enable phracek/PyCharm -y || true
-sudo dnf install -y \
-  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
-  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm || true
+
+# 启用 RPM Fusion 仓库（必须在安装软件前完成）
+if ! rpm -q rpmfusion-free-release >/dev/null 2>&1; then
+    echo "正在启用 RPM Fusion 仓库..."
+    sudo dnf install -y \
+      https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+      https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm || true
+fi
+
+# 刷新 DNF 缓存，确保新添加的仓库生效
+echo "正在刷新软件包缓存..."
+sudo dnf makecache --refresh >/dev/null 2>&1 || true
 
 # ==========================================
 # 2. DNF 软件自动检测与补全安装
 # ==========================================
-PKGS=(
-  niri waybar swaybg wl-clipboard fuzzel mako wlsunset
-  fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-qt fcitx5-rime
-  vim-enhanced nodejs npm foot kitty fish yazi
-  bat eza zoxide starship btop fastfetch chafa timg jq gdu xclip
+# 完整的软件包列表（合并了原版的完整列表）
+TARGET_SOFTWARE=(
+  # Niri 桌面核心组件
+  "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
+  # 输入法
+  "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
+  # 终端与 Shell
+  "foot" "kitty" "fish" "vim-enhanced" "neovim"
+  # 开发工具
+  "nodejs20" "nodejs20-npm"
+  # CLI 工具
+  "bat" "eza" "zoxide" "starship" "btop" "fastfetch" "chafa" "timg" "jq" "gdu" "xclip"
+  # 文件管理
+  "yazi" "thunar" "file-roller" "gvfs-smb" "gvfs-mtp" "gvfs-gphoto2"
+  "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer"
+  "xdg-desktop-portal-gtk" "xdg-desktop-portal-gnome" "python3-pillow"
+  "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav"
+  "thunar-archive-plugin" "thunar-volman"
+  # 字体
+  "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-nerd-fonts"
+  # 桌面额外工具
+  "breeze-cursor-theme" "mpv" "wf-recorder" "imv" "pavucontrol" "strace" "firefox"
+)
+
+# 关键软件包 - 失败则中止安装（Niri 桌面环境核心组件）
+CRITICAL_SOFTWARE=(
+  "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
+  "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
+  "vim-enhanced" "neovim" "nodejs20" "nodejs20-npm" "foot" "kitty"
 )
 
 echo "正在检测 DNF 软件安装状态..."
 MISSING_PKGS=()
-for pkg in "${PKGS[@]}"; do
+for pkg in "${TARGET_SOFTWARE[@]}"; do
     if ! rpm -q "$pkg" >/dev/null 2>&1; then
         MISSING_PKGS+=("$pkg")
     fi
@@ -49,8 +84,39 @@ if [ ${#MISSING_PKGS[@]} -eq 0 ]; then
     echo "所有需要的 DNF 软件包已存在，跳过安装。"
 else
     echo "发现未安装的软件包: ${MISSING_PKGS[*]}"
-    echo "正在使用 DNF 统一安装..."
-    sudo dnf install -y --skip-unavailable "${MISSING_PKGS[@]}" || true
+
+    # 分离关键包和普通包
+    CRITICAL_MISSING=()
+    NORMAL_MISSING=()
+    for pkg in "${MISSING_PKGS[@]}"; do
+        is_critical=0
+        for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
+            if [[ "$pkg" == "$critical_pkg" ]]; then
+                is_critical=1
+                break
+            fi
+        done
+        if [[ $is_critical -eq 1 ]]; then
+            CRITICAL_MISSING+=("$pkg")
+        else
+            NORMAL_MISSING+=("$pkg")
+        fi
+    done
+
+    # 先安装关键包
+    if [ ${#CRITICAL_MISSING[@]} -gt 0 ]; then
+        echo "正在安装关键软件包: ${CRITICAL_MISSING[*]}"
+        if ! sudo dnf install -y "${CRITICAL_MISSING[@]}"; then
+            echo "错误: 关键软件包安装失败，终止安装。"
+            exit 1
+        fi
+    fi
+
+    # 再安装普通包
+    if [ ${#NORMAL_MISSING[@]} -gt 0 ]; then
+        echo "正在安装可选软件包: ${NORMAL_MISSING[*]}"
+        sudo dnf install -y --skip-unavailable "${NORMAL_MISSING[@]}"
+    fi
 
     # 二次重试检测机制
     STILL_MISSING=()
@@ -62,9 +128,36 @@ else
 
     if [ ${#STILL_MISSING[@]} -gt 0 ]; then
         echo "正在对未成功的软件包尝试逐个重试安装..."
+        CRITICAL_FAILED=()
+        OPTIONAL_FAILED=()
         for pkg in "${STILL_MISSING[@]}"; do
-            sudo dnf install -y "$pkg" || echo "警告: 软件包 $pkg 安装失败，请检查包名或网络。"
+            sudo dnf install -y "$pkg" || {
+                # 检查是否为关键包
+                is_critical=0
+                for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
+                    if [[ "$pkg" == "$critical_pkg" ]]; then
+                        is_critical=1
+                        break
+                    fi
+                done
+                if [[ $is_critical -eq 1 ]]; then
+                    CRITICAL_FAILED+=("$pkg")
+                else
+                    OPTIONAL_FAILED+=("$pkg")
+                fi
+                echo "警告: 软件包 $pkg 安装失败，请检查包名或网络。"
+            }
         done
+
+        if [ ${#CRITICAL_FAILED[@]} -gt 0 ]; then
+            echo "错误: 以下关键软件包安装失败: ${CRITICAL_FAILED[*]}"
+            exit 1
+        fi
+
+        if [ ${#OPTIONAL_FAILED[@]} -gt 0 ]; then
+            echo "警告: 以下可选软件包安装失败，请检查网络或软件源: ${OPTIONAL_FAILED[*]}"
+            echo "脚本将继续执行，但由于软件缺失，部分功能可能无法正常工作。"
+        fi
     fi
 fi
 
@@ -75,9 +168,9 @@ echo "安装 Zen 浏览器中..."
 flatpak install -y flathub app.zen_browser.zen 2>/dev/null || flatpak install -y app.zen_browser.zen 2>/dev/null || true
 
 echo "马上帮你安装漂亮(nerd)的字体..."
-if [ -d ./fonts ]; then
+if [ -d "$SCRIPT_DIR/fonts" ]; then
     mkdir -p ~/.local/share/fonts/
-    cp -rf ./fonts/. ~/.local/share/fonts/
+    cp -rf "$SCRIPT_DIR/fonts/." ~/.local/share/fonts/
     sudo fc-cache -fv >/dev/null 2>&1
 fi
 
@@ -97,11 +190,11 @@ mkdir -p .yourconfigbak
 cp -rf ~/.config/. .yourconfigbak/ 2>/dev/null || true
 [ -f ~/.vimrc ] && cp -f ~/.vimrc ~/.yourconfigbak/
 
-cp -rf ./dotfiles/.config/* ~/.config/ 2>/dev/null || true
-[ -f ./dotfiles/.vimrc ] && cp -f ./dotfiles/.vimrc ~/.
-[ -d ./dotfiles/.local ] && cp -rf ./dotfiles/.local/ ~/.local/
+cp -rf "$SCRIPT_DIR/dotfiles/.config/"* ~/.config/ 2>/dev/null || true
+[ -f "$SCRIPT_DIR/dotfiles/.vimrc" ] && cp -f "$SCRIPT_DIR/dotfiles/.vimrc" ~/.
+[ -d "$SCRIPT_DIR/dotfiles/.local" ] && cp -rf "$SCRIPT_DIR/dotfiles/.local/" ~/.local/
 mkdir -p ~/Pictures
-[ -f ./Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg ] && cp -f ./Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg ~/Pictures/
+[ -f "$SCRIPT_DIR/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" ] && cp -f "$SCRIPT_DIR/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" ~/Pictures/
 
 echo "正在适配配置文件里的用户名..."
 replace_count=0
@@ -150,8 +243,19 @@ fi
 
 echo "安装美味的 omf..."
 if command -v fish >/dev/null 2>&1; then
-    curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish
-    fish -c "omf install agnoster; omf theme agnoster" 2>/dev/null || true
+    # 使用官方完整 URL 安装，避免短链接失效
+    if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish; then
+        # 验证 OMF 是否真正安装成功
+        OMF_INIT="$HOME/.local/share/omf/init.fish"
+        if [[ -f "$OMF_INIT" && -s "$OMF_INIT" ]] && ! grep -P '\\x00' "$OMF_INIT" 2>/dev/null; then
+            echo "OMF 安装成功。"
+            fish -c "omf install agnoster; omf theme agnoster" 2>/dev/null || echo "无法安装 agnoster 主题。"
+        else
+            echo "OMF 安装似乎成功但文件损坏或为空，请尝试手动安装。"
+        fi
+    else
+        echo "OMF 安装失败，请检查网络连接。"
+    fi
 fi
 
 echo "正在清理应用菜单里的终端工具图标..."
