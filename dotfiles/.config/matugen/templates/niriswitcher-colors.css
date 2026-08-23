@@ -166,5 +166,5 @@
     background-color: var(--highlight-color);
 }
 
-@import "/home/lancetfish/.config/niriswitcher/colors.css";
+@import "$HOME/.config/niriswitcher/colors.css";
 
