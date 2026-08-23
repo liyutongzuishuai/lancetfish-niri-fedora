@@ -52,7 +52,7 @@ TARGET_SOFTWARE=(
   # 开发工具
   "nodejs20" "nodejs20-npm"
   # CLI 工具
-  "bat" "eza" "zoxide" "starship" "btop" "fastfetch" "chafa" "timg" "jq" "gdu" "xclip"
+  "bat" "eza" "zoxide" "btop" "fastfetch" "chafa" "timg" "jq" "gdu" "xclip"
   # 文件管理
   "yazi" "thunar" "file-roller" "gvfs-smb" "gvfs-mtp" "gvfs-gphoto2"
   "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer"
@@ -60,7 +60,7 @@ TARGET_SOFTWARE=(
   "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav"
   "thunar-archive-plugin" "thunar-volman"
   # 字体
-  "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-nerd-fonts"
+  "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-fonts"
   # 桌面额外工具
   "breeze-cursor-theme" "mpv" "wf-recorder" "imv" "pavucontrol" "strace" "firefox"
 )

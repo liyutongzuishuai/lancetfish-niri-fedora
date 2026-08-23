@@ -51,15 +51,15 @@ TARGET_SOFTWARE=(
     # --- Desktop Extras & Media ---
     "breeze-cursor-theme" "mpv" "wf-recorder" "imv"
     # --- Fonts ---
-    "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-nerd-fonts"
+    "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-fonts"
     # --- File Manager & Core Utils ---
     "nautilus" "thunar" "file-roller" "gvfs-smb" "gvfs-mtp" "gvfs-gphoto2"
-    "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer" 
+    "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer"
     "xdg-desktop-portal-gtk" "xdg-desktop-portal-gnome" "python3-pillow"
-    "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav" 
+    "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav"
     "thunar-archive-plugin" "thunar-volman"
     # --- Standard CLI/GUI Packages ---
-    "bat" "xclip" "eza" "fish" "starship" "zoxide"
+    "bat" "xclip" "eza" "fish" "zoxide"
     "chafa" "timg" "ImageMagick" "jq"
     "pavucontrol" "strace" "kitty" "foot" "yazi" "firefox"
     "vim-enhanced" "neovim" "nodejs20" "nodejs20-npm" "fastfetch" "btop" "gdu"
@@ -83,7 +83,6 @@ UPDATE_IGNORE=(
     ".config/mako/colors.conf"
     ".config/btop/themes/matugen.theme"
     ".config/cava/themes/your-theme"
-    ".config/starship.toml"
     ".config/yazi/theme.toml"
     ".cache/matugen/recoloricons.sh"
     ".config/swayosd/colors.css"
