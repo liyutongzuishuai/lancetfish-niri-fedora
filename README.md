@@ -7,6 +7,24 @@
 
 ![桌面预览](pics/screenshot.png)
 
+## 安装
+
+安装脚本位于 `lancetfi.sh`，直接运行即会开始无人值守安装：
+
+```bash
+./lancetfi.sh
+```
+
+它会安装 Fish、Oh My Fish 与 Zen 浏览器，并逐文件备份将被覆盖的配置到 `~/.local/state/lancetfish-niri/backups/`。如需先检查计划而不改动系统或用户文件，请使用：
+
+```bash
+./lancetfi.sh --dry-run
+```
+
+脚本会同时启用本配置使用的 COPR 软件源：Waterfox、Yazi、PyCharm 和 Spark Store；RPM Fusion 也会在需要时启用。
+
+可用 `--no-packages`、`--no-flatpak`、`--no-omf`、`--no-dotfiles`、`--no-assets` 跳过某类操作；`--desktop-settings` 和 `--set-fish-shell` 是默认关闭的可选改动。完整选项请运行 `./lancetfi.sh --help`。
+
 ## 为什么选择我们
 
 - 首先，我们的foot十分美观 

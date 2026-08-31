@@ -1,294 +1,389 @@
 #!/usr/bin/env bash
+# Fedora + Niri configuration installer.
+#
+# Runs unattended by default. Use --dry-run to inspect the planned actions.
 
-set -e
+set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "当前工作目录: $SCRIPT_DIR"
-echo "输入一下 sudo 密码哦"
-sudo -v
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly DOTFILES_DIR="$SCRIPT_DIR/dotfiles"
+readonly FONTS_DIR="$SCRIPT_DIR/fonts"
+readonly WALLPAPERS_DIR="$SCRIPT_DIR/Wallpapers"
+readonly STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lancetfish-niri"
+readonly RUN_ID="$(date +%Y%m%d_%H%M%S)"
+readonly BACKUP_DIR="$STATE_DIR/backups/$RUN_ID"
+readonly LOG_FILE="$STATE_DIR/install-$RUN_ID.log"
 
-# 保持 sudo 权限在后台不失效
-(while true; do sudo -n true; sleep 50; kill -0 "$$" || exit; done) 2>/dev/null &
+APPLY=true
+INSTALL_PACKAGES=true
+INSTALL_FLATPAK=true
+INSTALL_OMF=true
+COPY_DOTFILES=true
+COPY_ASSETS=true
+APPLY_DESKTOP_SETTINGS=false
+SET_FISH_SHELL=false
 
-echo "3"
-sleep 1
-echo "2"
-sleep 1
-echo "start"
+# The minimum packages needed by the supplied Niri session.
+CORE_PACKAGES=(
+    niri waybar swaybg swaylock wl-clipboard fuzzel mako wlsunset
+    foot fish fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-qt fcitx5-rime
+    xdg-desktop-portal xdg-desktop-portal-gtk xdg-desktop-portal-gnome
+    pipewire-utils playerctl brightnessctl curl flatpak
+)
 
-# ==========================================
-# 日志设置
-# ==========================================
-LOGFILE="$HOME/.local/state/lancetfi_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p "$(dirname "$LOGFILE")"
-echo "=== Lancetfi 安装日志 ===" > "$LOGFILE"
-echo "开始时间: $(date)" >> "$LOGFILE"
-echo "用户: $USER ($UID)" >> "$LOGFILE"
-echo "主机: $(hostname)" >> "$LOGFILE"
-echo "发行版: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"')" >> "$LOGFILE"
-echo "" >> "$LOGFILE"
+# Personal COPR repositories used by this Fedora setup. They are enabled before
+# package installation so their packages stay available for later DNF use too.
+COPR_REPOSITORIES=(
+    deltacopy/waterfox
+    lihaohong/yazi
+    phracek/PyCharm
+    xmp360/spark-store
+)
 
-# 重定向所有输出到日志文件和终端
-exec > >(tee -a "$LOGFILE") 2>&1
+# Missing optional packages are reported but do not fail the installation.
+OPTIONAL_PACKAGES=(
+    kitty vim-enhanced neovim nodejs20 nodejs20-npm
+    bat eza zoxide btop fastfetch chafa timg jq gdu xclip
+    yazi Thunar file-roller gvfs-smb gvfs-mtp gvfs-gphoto2 gnome-keyring
+    tumbler poppler-glib ffmpegthumbnailer thunar-archive-plugin thunar-volman
+    google-noto-fonts-common google-noto-sans-cjk-fonts jetbrains-mono-fonts
+    breeze-cursor-theme mpv wf-recorder imv pavucontrol strace firefox
+    ImageMagick sxhkd ydotool matugen
+    gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugin-libav
+)
 
-# 捕获退出时的信息
-trap 'echo "=== 安装结束时间: $(date) ===" >> "$LOGFILE"' EXIT
+usage() {
+    cat <<'EOF'
+Usage: ./lancetfi.sh [options]
 
-# ==========================================
-# 1. 配置软件源 (COPR & RPM Fusion)
-# ==========================================
-echo "正在为你添加软件源..."
+Runs the complete installation without an interactive confirmation. Use
+--dry-run when you only want to inspect the plan.
 
-# 启用 COPR 仓库
-sudo dnf copr enable alternateved/keyd -y || true
-sudo dnf copr enable lihaohong/yazi -y || true
-sudo dnf copr enable phracek/PyCharm -y || true
+Options:
+  --apply               Perform the selected actions (the default).
+  --dry-run             Show the plan only; do not change anything.
+  --no-packages         Do not install RPM packages or enable RPM Fusion.
+  --no-flatpak          Do not install Zen Browser through Flatpak.
+  --no-omf              Do not install Oh My Fish.
+  --no-dotfiles         Do not copy dotfiles.
+  --no-assets           Do not copy fonts or wallpapers.
+  --desktop-settings    Apply optional GNOME dark-theme preferences.
+  --set-fish-shell      Set fish as the login shell after it is installed.
+  -h, --help            Show this help text.
 
-# 启用 RPM Fusion 仓库（必须在安装软件前完成）
-if ! rpm -q rpmfusion-free-release >/dev/null 2>&1; then
-    echo "正在启用 RPM Fusion 仓库..."
+Existing managed files are backed up individually under:
+  ~/.local/state/lancetfish-niri/backups/<timestamp>/
+
+Examples:
+  ./lancetfi.sh
+  ./lancetfi.sh --dry-run
+  ./lancetfi.sh --no-flatpak --desktop-settings
+EOF
+}
+
+info() { printf '[INFO] %s\n' "$*"; }
+warn() { printf '[WARN] %s\n' "$*" >&2; }
+die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
+on_error() {
+    local line="$1" command="$2"
+    printf '[ERROR] Stopped at line %s while running: %s\n' "$line" "$command" >&2
+}
+
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+validate_environment() {
+    (( EUID != 0 )) || die "Run this script as a regular user, not as root."
+    [[ -n "${HOME:-}" && -d "$HOME" ]] || die "HOME is not a usable directory."
+    [[ -r /etc/os-release ]] || die "Cannot identify the operating system."
+
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    [[ "${ID:-}" == "fedora" ]] || die "This installer currently supports Fedora only."
+    [[ -d "$DOTFILES_DIR" ]] || die "Missing required directory: $DOTFILES_DIR"
+}
+
+print_plan() {
+    info "Installation plan"
+    printf '  RPM packages:        %s\n' "$INSTALL_PACKAGES"
+    printf '  Zen Browser:         %s\n' "$INSTALL_FLATPAK"
+    printf '  Oh My Fish:          %s\n' "$INSTALL_OMF"
+    printf '  Dotfiles:            %s\n' "$COPY_DOTFILES"
+    printf '  Fonts/wallpapers:    %s\n' "$COPY_ASSETS"
+    printf '  Desktop preferences: %s\n' "$APPLY_DESKTOP_SETTINGS"
+    printf '  Fish login shell:    %s\n\n' "$SET_FISH_SHELL"
+    info "The script runs without confirmation unless you pass --dry-run."
+}
+
+setup_logging() {
+    mkdir -p -- "$STATE_DIR" "$BACKUP_DIR"
+    : > "$LOG_FILE"
+    exec > >(tee -a "$LOG_FILE") 2>&1
+    info "Log: $LOG_FILE"
+    info "Backup directory: $BACKUP_DIR"
+}
+
+enable_rpmfusion() {
+    if rpm -q rpmfusion-free-release >/dev/null 2>&1 && \
+       rpm -q rpmfusion-nonfree-release >/dev/null 2>&1; then
+        info "RPM Fusion is already enabled."
+        return
+    fi
+
+    local fedora_release
+    fedora_release="$(rpm -E %fedora)"
+    info "Enabling RPM Fusion for Fedora $fedora_release."
     sudo dnf install -y \
-      https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
-      https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm || true
-fi
+        "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_release}.noarch.rpm" \
+        "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_release}.noarch.rpm"
+}
 
-# 刷新 DNF 缓存，确保新添加的仓库生效
-echo "正在刷新软件包缓存..."
-sudo dnf makecache --refresh >/dev/null 2>&1 || true
-
-# ==========================================
-# 2. DNF 软件自动检测与补全安装
-# ==========================================
-# 完整的软件包列表（合并了原版的完整列表）
-TARGET_SOFTWARE=(
-  # Niri 桌面核心组件
-  "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
-  # 输入法
-  "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
-  # 终端与 Shell
-  "foot" "kitty" "fish" "vim-enhanced" "neovim"
-  # 开发工具
-  "nodejs20" "nodejs20-npm"
-  # CLI 工具
-  "bat" "eza" "zoxide" "btop" "fastfetch" "chafa" "timg" "jq" "gdu" "xclip"
-  # 文件管理
-  "yazi" "thunar" "file-roller" "gvfs-smb" "gvfs-mtp" "gvfs-gphoto2"
-  "gnome-keyring" "tumbler" "poppler-glib" "ffmpegthumbnailer"
-  "xdg-desktop-portal-gtk" "xdg-desktop-portal-gnome" "python3-pillow"
-  "gstreamer1-plugins-base" "gstreamer1-plugins-good" "gstreamer1-plugin-libav"
-  "thunar-archive-plugin" "thunar-volman"
-  # 字体
-  "google-noto-fonts-common" "google-noto-sans-cjk-fonts" "jetbrains-mono-fonts"
-  # 桌面额外工具
-  "breeze-cursor-theme" "mpv" "wf-recorder" "imv" "pavucontrol" "strace" "firefox"
-)
-
-# 关键软件包 - 失败则中止安装（Niri 桌面环境核心组件）
-CRITICAL_SOFTWARE=(
-  "niri" "waybar" "swaybg" "wl-clipboard" "fuzzel" "mako" "wlsunset"
-  "fcitx5" "fcitx5-configtool" "fcitx5-gtk" "fcitx5-qt" "fcitx5-rime"
-  "vim-enhanced" "neovim" "nodejs20" "nodejs20-npm" "foot" "kitty"
-)
-
-echo "正在检测 DNF 软件安装状态..."
-MISSING_PKGS=()
-for pkg in "${TARGET_SOFTWARE[@]}"; do
-    if ! rpm -q "$pkg" >/dev/null 2>&1; then
-        MISSING_PKGS+=("$pkg")
-    fi
-done
-
-if [ ${#MISSING_PKGS[@]} -eq 0 ]; then
-    echo "所有需要的 DNF 软件包已存在，跳过安装。"
-else
-    echo "发现未安装的软件包: ${MISSING_PKGS[*]}"
-
-    # 分离关键包和普通包
-    CRITICAL_MISSING=()
-    NORMAL_MISSING=()
-    for pkg in "${MISSING_PKGS[@]}"; do
-        is_critical=0
-        for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
-            if [[ "$pkg" == "$critical_pkg" ]]; then
-                is_critical=1
-                break
-            fi
-        done
-        if [[ $is_critical -eq 1 ]]; then
-            CRITICAL_MISSING+=("$pkg")
-        else
-            NORMAL_MISSING+=("$pkg")
+enable_copr_repositories() {
+    local repository
+    for repository in "${COPR_REPOSITORIES[@]}"; do
+        info "Enabling COPR repository: $repository"
+        if ! sudo dnf copr enable "$repository" -y; then
+            warn "Could not enable COPR repository: $repository"
         fi
     done
+}
 
-    # 先安装关键包
-    if [ ${#CRITICAL_MISSING[@]} -gt 0 ]; then
-        echo "正在安装关键软件包: ${CRITICAL_MISSING[*]}"
-        if ! sudo dnf install -y "${CRITICAL_MISSING[@]}"; then
-            echo "错误: 关键软件包安装失败，终止安装。"
-            exit 1
-        fi
-    fi
+collect_missing_packages() {
+    local -n destination="$1"
+    shift
+    destination=()
 
-    # 再安装普通包
-    if [ ${#NORMAL_MISSING[@]} -gt 0 ]; then
-        echo "正在安装可选软件包: ${NORMAL_MISSING[*]}"
-        sudo dnf install -y --skip-unavailable "${NORMAL_MISSING[@]}"
-    fi
-
-    # 二次重试检测机制
-    STILL_MISSING=()
-    for pkg in "${MISSING_PKGS[@]}"; do
-        if ! rpm -q "$pkg" >/dev/null 2>&1; then
-            STILL_MISSING+=("$pkg")
-        fi
+    local package
+    for package in "$@"; do
+        rpm -q "$package" >/dev/null 2>&1 || destination+=("$package")
     done
+}
 
-    if [ ${#STILL_MISSING[@]} -gt 0 ]; then
-        echo "正在对未成功的软件包尝试逐个重试安装..."
-        CRITICAL_FAILED=()
-        OPTIONAL_FAILED=()
-        for pkg in "${STILL_MISSING[@]}"; do
-            sudo dnf install -y "$pkg" || {
-                # 检查是否为关键包
-                is_critical=0
-                for critical_pkg in "${CRITICAL_SOFTWARE[@]}"; do
-                    if [[ "$pkg" == "$critical_pkg" ]]; then
-                        is_critical=1
-                        break
-                    fi
-                done
-                if [[ $is_critical -eq 1 ]]; then
-                    CRITICAL_FAILED+=("$pkg")
-                else
-                    OPTIONAL_FAILED+=("$pkg")
-                fi
-                echo "警告: 软件包 $pkg 安装失败，请检查包名或网络。"
-            }
-        done
-
-        if [ ${#CRITICAL_FAILED[@]} -gt 0 ]; then
-            echo "错误: 以下关键软件包安装失败: ${CRITICAL_FAILED[*]}"
-            exit 1
-        fi
-
-        if [ ${#OPTIONAL_FAILED[@]} -gt 0 ]; then
-            echo "警告: 以下可选软件包安装失败，请检查网络或软件源: ${OPTIONAL_FAILED[*]}"
-            echo "脚本将继续执行，但由于软件缺失，部分功能可能无法正常工作。"
-        fi
+install_required_packages() {
+    local missing=()
+    collect_missing_packages missing "${CORE_PACKAGES[@]}"
+    if (( ${#missing[@]} == 0 )); then
+        info "All core packages are already installed."
+        return
     fi
-fi
+    info "Installing core packages: ${missing[*]}"
+    sudo dnf install -y "${missing[@]}"
+}
 
-# ==========================================
-# 3. Flatpak 软件与字体安装
-# ==========================================
-echo "安装 Zen 浏览器中..."
-flatpak install -y flathub app.zen_browser.zen 2>/dev/null || flatpak install -y app.zen_browser.zen 2>/dev/null || true
-
-echo "马上帮你安装漂亮(nerd)的字体..."
-if [ -d "$SCRIPT_DIR/fonts" ]; then
-    mkdir -p ~/.local/share/fonts/
-    cp -rf "$SCRIPT_DIR/fonts/." ~/.local/share/fonts/
-    sudo fc-cache -fv >/dev/null 2>&1
-fi
-
-# ==========================================
-# 4. 目录重命名与 Dotfiles 部署
-# ==========================================
-echo "正在把你的'音乐'、'下载'、'视频'等目录换成英文..."
-sed -i 's/桌面/Desktop/g; s/下载/Downloads/g; s/模板/Templates/g; s/公共/Public/g; s/文档/Documents/g; s/音乐/Music/g; s/图片/Pictures/g; s/视频/Videos/g' ~/.config/user-dirs.dirs 2>/dev/null
-
-declare -A DIRS=(["桌面"]="Desktop" ["下载"]="Downloads" ["模板"]="Templates" ["公共"]="Public" ["文档"]="Documents" ["音乐"]="Music" ["图片"]="Pictures" ["视频"]="Videos")
-for zh in "${!DIRS[@]}"; do
-    [ -d ~/"$zh" ] && mv ~/"$zh" ~/"${DIRS[$zh]}"
-done
-
-echo "正在备份并写入新的配置文件..."
-mkdir -p .yourconfigbak
-cp -rf ~/.config/. .yourconfigbak/ 2>/dev/null || true
-[ -f ~/.vimrc ] && cp -f ~/.vimrc ~/.yourconfigbak/
-
-cp -rf "$SCRIPT_DIR/dotfiles/.config/"* ~/.config/ 2>/dev/null || true
-[ -f "$SCRIPT_DIR/dotfiles/.vimrc" ] && cp -f "$SCRIPT_DIR/dotfiles/.vimrc" ~/.
-[ -d "$SCRIPT_DIR/dotfiles/.local" ] && cp -rf "$SCRIPT_DIR/dotfiles/.local/" ~/.local/
-mkdir -p ~/Pictures
-[ -f "$SCRIPT_DIR/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" ] && cp -f "$SCRIPT_DIR/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" ~/Pictures/
-
-echo "正在适配配置文件里的用户名..."
-replace_count=0
-cd "$HOME" || true
-while IFS= read -r -d '' file; do
-    if grep -q "/home/lancetfish" "$file" 2>/dev/null; then
-        sed -i "s|/home/lancetfish|/home/$USER|g" "$file"
-        ((replace_count++))
+install_optional_packages() {
+    local missing=()
+    collect_missing_packages missing "${OPTIONAL_PACKAGES[@]}"
+    if (( ${#missing[@]} == 0 )); then
+        info "All optional packages are already installed."
+        return
     fi
-done < <(find .config .local -type f -print0 2>/dev/null)
-echo "已将 $replace_count 个文件中的占位用户名替换为: $USER"
 
-# ==========================================
-# 5. Shell / Vim / 外观微调
-# ==========================================
-echo "正在将默认 Shell 修改为 fish..."
-FISH_PATH="$(command -v fish || true)"
-if [ -n "$FISH_PATH" ]; then
-    grep -qx "$FISH_PATH" /etc/shells || echo "$FISH_PATH" | sudo tee -a /etc/shells >/dev/null
-    sudo chsh -s "$FISH_PATH" "$USER"
-fi
-
-echo "正在帮你改为深色模式及配置 Flatpak..."
-if command -v gsettings >/dev/null 2>&1; then
-    gsettings set org.gnome.desktop.interface color-scheme "prefer-dark" 2>/dev/null || true
-    gsettings set org.gnome.desktop.interface gtk-theme "adw-gtk3-dark" 2>/dev/null || true
-    gsettings set org.gnome.desktop.wm.preferences button-layout ":close" 2>/dev/null || true
-fi
-
-if command -v flatpak >/dev/null 2>&1; then
-    flatpak override --user --filesystem=xdg-data/themes 2>/dev/null || true
-    flatpak override --user --filesystem="$HOME/.themes" 2>/dev/null || true
-    flatpak override --user --filesystem=xdg-config/gtk-4.0 2>/dev/null || true
-    flatpak override --user --filesystem=xdg-config/gtk-3.0 2>/dev/null || true
-    flatpak override --user --env=GTK_THEME=adw-gtk3-dark 2>/dev/null || true
-    flatpak override --user --filesystem=xdg-config/fontconfig 2>/dev/null || true
-fi
-
-if command -v vim >/dev/null 2>&1; then
-    if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
-        curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
-            https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim 2>/dev/null || true
+    info "Installing optional packages: ${missing[*]}"
+    if ! sudo dnf install -y --skip-unavailable "${missing[@]}"; then
+        warn "Some optional packages could not be installed; continuing."
     fi
-    vim +PlugInstall +qall >/dev/null 2>&1 || true
-fi
 
-echo "安装美味的 omf..."
-if command -v fish >/dev/null 2>&1; then
-    # 使用官方完整 URL 安装，避免短链接失效
-    if curl -s https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install | fish; then
-        # 验证 OMF 是否真正安装成功
-        OMF_INIT="$HOME/.local/share/omf/init.fish"
-        if [[ -f "$OMF_INIT" && -s "$OMF_INIT" ]] && ! grep -P '\\x00' "$OMF_INIT" 2>/dev/null; then
-            echo "OMF 安装成功。"
-            fish -c "omf install agnoster; omf theme agnoster" 2>/dev/null || echo "无法安装 agnoster 主题。"
-        else
-            echo "OMF 安装似乎成功但文件损坏或为空，请尝试手动安装。"
-        fi
+    local unavailable=() package
+    for package in "${missing[@]}"; do
+        rpm -q "$package" >/dev/null 2>&1 || unavailable+=("$package")
+    done
+    (( ${#unavailable[@]} == 0 )) || warn "Unavailable optional packages: ${unavailable[*]}"
+}
+
+install_packages() {
+    require_command dnf
+    require_command rpm
+    enable_copr_repositories
+    enable_rpmfusion
+    install_required_packages
+    install_optional_packages
+}
+
+install_zen_browser() {
+    if ! command -v flatpak >/dev/null 2>&1; then
+        warn "Flatpak is unavailable; skipped Zen Browser."
+        return
+    fi
+    if ! flatpak remote-info flathub app.zen_browser.zen >/dev/null 2>&1; then
+        info "Adding the user-level Flathub remote."
+        flatpak remote-add --if-not-exists --user flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+    fi
+    info "Installing Zen Browser for the current user."
+    flatpak install -y --user flathub app.zen_browser.zen || \
+        warn "Zen Browser could not be installed; retry later with Flatpak."
+}
+
+install_omf() {
+    if ! command -v fish >/dev/null 2>&1; then
+        warn "fish is unavailable; skipped Oh My Fish."
+        return
+    fi
+    require_command curl
+
+    local omf_init="$HOME/.local/share/omf/init.fish"
+    if [[ -s "$omf_init" ]]; then
+        info "Oh My Fish is already installed."
+        return
+    fi
+
+    local installer
+    installer="$(mktemp)"
+    info "Downloading and installing Oh My Fish."
+    if ! curl --fail --location --proto '=https' --tlsv1.2 \
+        --output "$installer" \
+        https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install; then
+        rm -f -- "$installer"
+        warn "Oh My Fish download failed; continuing."
+        return
+    fi
+
+    if ! fish "$installer" --noninteractive; then
+        rm -f -- "$installer"
+        warn "Oh My Fish installation failed; continuing."
+        return
+    fi
+    rm -f -- "$installer"
+
+    [[ -s "$omf_init" ]] && info "Oh My Fish installed." || \
+        warn "Oh My Fish did not create its expected initialization file."
+}
+
+backup_existing_file() {
+    local destination="$1" relative_path="$2"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        local backup_file="$BACKUP_DIR/$relative_path"
+        mkdir -p -- "$(dirname -- "$backup_file")"
+        cp -a -- "$destination" "$backup_file"
+        rm -f -- "$destination"
+    fi
+}
+
+replace_home_placeholder() {
+    local file="$1"
+    grep -Iq . "$file" || return 0
+    grep -qF '/home/lancetfish' "$file" || return 0
+
+    local escaped_home="${HOME//\\/\\\\}"
+    escaped_home="${escaped_home//&/\\&}"
+    escaped_home="${escaped_home//|/\\|}"
+    sed -i "s|/home/lancetfish|$escaped_home|g" "$file"
+}
+
+copy_dotfiles() {
+    info "Copying dotfiles with per-file backups."
+    local copied=0 source_file relative_path destination_file
+    while IFS= read -r -d '' source_file; do
+        relative_path="${source_file#"$DOTFILES_DIR"/}"
+        destination_file="$HOME/$relative_path"
+        [[ "$destination_file" == "$HOME/"* ]] || die "Unsafe destination path: $destination_file"
+        [[ ! -d "$destination_file" || -L "$destination_file" ]] || \
+            die "Cannot replace directory with file: $destination_file"
+        backup_existing_file "$destination_file" "$relative_path"
+        mkdir -p -- "$(dirname -- "$destination_file")"
+        cp -a -- "$source_file" "$destination_file"
+        replace_home_placeholder "$destination_file"
+        ((copied += 1))
+    done < <(find "$DOTFILES_DIR" -type f -print0)
+    info "Installed $copied dotfile(s)."
+}
+
+copy_optional_tree() {
+    local source_dir="$1" destination_dir="$2" label="$3"
+    [[ -d "$source_dir" ]] || { warn "No $label directory found; skipped."; return; }
+
+    local copied=0 source_file relative_path destination_file
+    while IFS= read -r -d '' source_file; do
+        relative_path="${source_file#"$source_dir"/}"
+        destination_file="$destination_dir/$relative_path"
+        mkdir -p -- "$(dirname -- "$destination_file")"
+        [[ ! -e "$destination_file" && ! -L "$destination_file" ]] || continue
+        cp -a -- "$source_file" "$destination_file"
+        ((copied += 1))
+    done < <(find "$source_dir" -type f -print0)
+    info "Installed $copied new $label file(s); existing files were kept."
+}
+
+copy_assets() {
+    copy_optional_tree "$FONTS_DIR" "$HOME/.local/share/fonts" "font"
+    if command -v fc-cache >/dev/null 2>&1; then
+        fc-cache -f
     else
-        echo "OMF 安装失败，请检查网络连接。"
+        warn "fc-cache is unavailable; refresh the font cache manually later."
     fi
-fi
+    copy_optional_tree "$WALLPAPERS_DIR" "$HOME/Pictures/Wallpapers" "wallpaper"
+}
 
-echo "正在清理应用菜单里的终端工具图标..."
-apps_to_hide=(
-    "lstopo.desktop" "avahi-discover.desktop" "qv4l2.desktop" "qvidcap.desktop"
-    "bssh.desktop" "org.fcitx.Fcitx5.desktop" "yazi.desktop" "btop.desktop"
-    "vim.desktop" "nvim.desktop" "nvtop.desktop" "mpv.desktop"
-)
-mkdir -p "$HOME/.local/share/applications"
-for app in "${apps_to_hide[@]}"; do
-    if [[ -f "/usr/share/applications/$app" ]]; then
-        cp -f "/usr/share/applications/$app" "$HOME/.local/share/applications/"
-        echo "NoDisplay=true" >> "$HOME/.local/share/applications/$app"
+apply_desktop_settings() {
+    if ! command -v gsettings >/dev/null 2>&1; then
+        warn "gsettings is unavailable; skipped desktop preferences."
+        return
     fi
-done
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' || warn "Could not set colour scheme."
+    gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' || warn "Could not set GTK theme."
+    gsettings set org.gnome.desktop.wm.preferences button-layout ':close' || warn "Could not set window buttons."
+}
 
-echo "已经安装成功了 享受美好 fedora 生活吧"
-fastfetch 2>/dev/null || true
+set_fish_as_login_shell() {
+    local fish_path
+    fish_path="$(command -v fish || true)"
+    [[ -n "$fish_path" ]] || { warn "fish is not installed; skipped login shell change."; return; }
+    if ! grep -qxF "$fish_path" /etc/shells; then
+        printf '%s\n' "$fish_path" | sudo tee -a /etc/shells >/dev/null
+    fi
+    chsh -s "$fish_path" "$USER"
+    info "Fish is now the login shell for $USER."
+}
+
+parse_arguments() {
+    while (( $# > 0 )); do
+        case "$1" in
+            --apply) APPLY=true ;;
+            --dry-run) APPLY=false ;;
+            --no-packages) INSTALL_PACKAGES=false ;;
+            --no-flatpak) INSTALL_FLATPAK=false ;;
+            --no-omf) INSTALL_OMF=false ;;
+            --no-dotfiles) COPY_DOTFILES=false ;;
+            --no-assets) COPY_ASSETS=false ;;
+            --desktop-settings) APPLY_DESKTOP_SETTINGS=true ;;
+            --set-fish-shell) SET_FISH_SHELL=true ;;
+            -h|--help) usage; exit 0 ;;
+            *) die "Unknown option: $1 (use --help for usage)" ;;
+        esac
+        shift
+    done
+}
+
+main() {
+    parse_arguments "$@"
+    print_plan
+    if [[ "$APPLY" != true ]]; then
+        info "Dry run complete. Re-run without --dry-run to make changes."
+        return 0
+    fi
+
+    validate_environment
+    setup_logging
+    info "Starting installation."
+    if [[ "$INSTALL_PACKAGES" == true || "$SET_FISH_SHELL" == true ]]; then
+        info "Requesting administrator permission when needed."
+        sudo -v
+    fi
+
+    [[ "$INSTALL_PACKAGES" != true ]] || install_packages
+    [[ "$INSTALL_OMF" != true ]] || install_omf
+    [[ "$INSTALL_FLATPAK" != true ]] || install_zen_browser
+    [[ "$COPY_DOTFILES" != true ]] || copy_dotfiles
+    [[ "$COPY_ASSETS" != true ]] || copy_assets
+    [[ "$APPLY_DESKTOP_SETTINGS" != true ]] || apply_desktop_settings
+    [[ "$SET_FISH_SHELL" != true ]] || set_fish_as_login_shell
+
+    info "Installation complete."
+    info "Backups (if any): $BACKUP_DIR"
+}
+
+main "$@"

@@ -273,7 +273,7 @@ layout {
 // This line starts waybar, a commonly used bar for Wayland compositors.
 spawn-at-startup "waybar"
 spawn-at-startup "fcitx5"
-spawn-at-startup "swaybg" "-i" "~/Pictures/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" "-m" "fill"
+spawn-at-startup "swaybg" "-i" "/home/lancetfish/Pictures/Wallpapers/3840px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg" "-m" "fill"
 spawn-at-startup "ydotoold"
 spawn-at-startup "sxhkd"
 
