@@ -1,3 +1,9 @@
+# ⚠️ 此仓库已废弃
+
+请改用 **https://github.com/liyutongzuishuai/niri-m3-trackpad**（Niri M3 Waybar + Apple 风格触控板手势三合一）。
+
+---
+
 # lancetfish-niri-fedora
  
 基于 [SHORiN-KiWATA/shorin-niri](https://github.com/SHORiN-KiWATA/shorin-niri) 的 Niri 桌面配置，经过个人定制与调整。
